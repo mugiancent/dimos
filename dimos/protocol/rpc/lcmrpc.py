@@ -13,9 +13,16 @@
 # limitations under the License.
 
 from dimos.protocol.pubsub.lcmpubsub import PickleLCM, Topic
+from dimos.protocol.rpc.lcmservice import LCMConfig
 from dimos.protocol.rpc.pubsubrpc import PassThroughPubSubRPC
 
 
+class LCMRPCConfig(LCMConfig):
+    url: str | None = "udpm://239.255.76.67:7668?ttl=0"
+
+
 class LCMRPC(PassThroughPubSubRPC, PickleLCM):
+    default_config = LCMRPCConfig
+
     def topicgen(self, name: str, req_or_res: bool) -> Topic:
         return Topic(topic=f"/rpc/{name}/{'res' if req_or_res else 'req'}")
