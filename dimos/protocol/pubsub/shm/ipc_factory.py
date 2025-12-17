@@ -46,6 +46,7 @@ def _sanitize_shm_name(name: str) -> str:
     #  Python's SharedMemory expects names like 'psm_abc', without leading '/'
     return name.lstrip("/") if isinstance(name, str) else name
 
+
 def _ensure_cuda_context(cp, dev: int) -> None:
     """Create/init runtime+primary context on this thread for device `dev`."""
     cp.cuda.Device(dev).use()  # makes primary context current (creates if needed)
@@ -308,6 +309,7 @@ class CpuShmChannel(FrameChannel):
         except:
             pass
 
+
 # ---------------------------
 # 3) CUDA IPC backend (CuPy)
 # ---------------------------
@@ -554,6 +556,7 @@ class CudaIpcChannel(FrameChannel):
         except Exception:
             pass
 
+
 # ---------------------------
 # 4) Factories
 # ---------------------------
@@ -570,6 +573,7 @@ class CPU_IPC_Factory:
     def attach(desc: dict) -> CpuShmChannel:
         assert desc.get("kind") == "cpu", "Descriptor kind mismatch"
         return CpuShmChannel.attach(desc)
+
 
 class CUDA_IPC_Factory:
     """Creates/attaches CUDA IPC channels (CuPy)."""
@@ -599,6 +603,7 @@ class CUDA_IPC_Factory:
 # 5) Runtime selector
 # ---------------------------
 
+
 def make_frame_channel(
     shape, dtype=np.uint8, prefer: str = "auto", device: int = 0
 ) -> FrameChannel:
@@ -612,4 +617,3 @@ def make_frame_channel(
                     raise
                 # fall back
     return CPU_IPC_Factory.create(shape, dtype=dtype)
-

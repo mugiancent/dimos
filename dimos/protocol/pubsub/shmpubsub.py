@@ -186,7 +186,6 @@ class SharedMemoryPubSubBase(PubSub[str, Any]):
         else:
             st.channel.publish(host)
 
-
     def subscribe(self, topic: str, callback: Callable[[bytes, str], Any]) -> Callable[[], None]:
         """Subscribe a callback(message: bytes, topic). Returns unsubscribe."""
         st = self._ensure_topic(topic)
@@ -278,7 +277,9 @@ class SharedMemoryPubSubBase(PubSub[str, Any]):
                     cp_mod = cp
                     logger.info("SharedMemory using CUDA backend")
                 except Exception as e:
-                    ch = CpuShmChannel((cap + 4,), np.uint8, data_name=data_name, ctrl_name=ctrl_name)
+                    ch = CpuShmChannel(
+                        (cap + 4,), np.uint8, data_name=data_name, ctrl_name=ctrl_name
+                    )
                     logger.info(f"SharedMemory falling back to CPU backend due to exception: {e}")
             else:
                 ch = CpuShmChannel((cap + 4,), np.uint8, data_name=data_name, ctrl_name=ctrl_name)
