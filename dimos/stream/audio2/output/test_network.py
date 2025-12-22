@@ -62,6 +62,7 @@ def test_network_output_to_server_signal():
             frequency=freq,
             volume=0.2,
             duration=dur,
+            realtime=False,
             output=AudioSpec(format=AudioFormat.PCM_F32LE),
         )
         for freq, dur in melody_notes
@@ -70,7 +71,7 @@ def test_network_output_to_server_signal():
     # Concatenate all notes into a melody and apply robotic effect
     concat(*notes).pipe(normalizer(), network_output(host=host, port=5002, codec="opus")).run()
 
-    time.sleep(0.2)
+    time.sleep(2.5)
 
 
 @pytest.mark.tool

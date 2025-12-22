@@ -73,9 +73,9 @@ class NetworkOutputNode(GStreamerSinkBase):
 
     def _configure_sink(self):
         """Configure the udpsink after pipeline creation."""
-        # Use sync=True to send packets at real-time rate based on buffer timestamps
-        # This prevents network congestion and receiver buffer overflow
-        # AudioEvents have timestamps that are preserved on GStreamer buffers
+        # Use sync=False to send packets as they arrive, not paced by timestamps
+        # This is necessary for concatenated streams with discontinuous timestamps
+        # The receiver handles playback timing
         from gi.repository import Gst
 
         # Get udpsink by iterating elements
@@ -83,9 +83,9 @@ class NetworkOutputNode(GStreamerSinkBase):
         result, elem = it.next()
         while result == Gst.IteratorResult.OK:
             if elem.get_factory().get_name() == "udpsink":
-                elem.set_property("sync", True)
+                elem.set_property("sync", False)
                 elem.set_property("async", False)
-                logger.info(f"Set sync=True, async=False on udpsink (sends at timestamp rate)")
+                logger.info(f"Set sync=False, async=False on udpsink (sends as fast as available)")
                 break
             result, elem = it.next()
 
@@ -94,24 +94,30 @@ class NetworkOutputNode(GStreamerSinkBase):
 
         Pipeline: queue → decodebin → audioconvert → audioresample → encoder → queue → rtppay → udpsink
         """
+        import random
+
         codec = self.config.codec.lower()
         host = self.config.host
         port = self.config.port
         bitrate = self.config.bitrate
 
+        # Generate random SSRC so receiver can distinguish between different streams
+        # This allows jitterbuffer to reset timing when a new stream starts
+        ssrc = random.randint(0, 0xFFFFFFFF)
+
         if codec == "opus":
             # Opus codec (recommended for low latency and quality)
             # Ensure bitrate is set for consistent quality
             encoder = f"opusenc bitrate={bitrate} frame-size=20"
-            payloader = "rtpopuspay"
+            payloader = f"rtpopuspay ssrc={ssrc}"
         elif codec == "vorbis":
             # Vorbis codec
             encoder = f"vorbisenc quality=0.5"
-            payloader = "rtpvorbispay"
+            payloader = f"rtpvorbispay ssrc={ssrc}"
         elif codec == "pcm" or codec == "raw":
             # Raw PCM audio (L16)
             encoder = "audioconvert"
-            payloader = "rtpL16pay"
+            payloader = f"rtpL16pay ssrc={ssrc}"
         else:
             raise ValueError(f"Unsupported codec: {codec}. Use 'opus', 'vorbis', or 'pcm'")
 
@@ -127,6 +133,8 @@ class NetworkOutputNode(GStreamerSinkBase):
             f"{payloader} ! "
             f"udpsink host={host} port={port} buffer-size={self.config.buffer_time}"
         )
+
+        logger.info(f"NetworkOutput: Using SSRC={ssrc} for new stream")
 
         return pipeline
 
