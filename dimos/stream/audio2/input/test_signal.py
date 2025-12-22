@@ -21,12 +21,12 @@ import time
 import pytest
 from reactivex import operators as ops
 
-from dimos.stream.audio2.input.signal import WaveformType, test_signal
+from dimos.stream.audio2.input.signal import WaveformType, signal
 from dimos.stream.audio2.types import AudioFormat, AudioSpec
 
 
 def test_signal_input_completes():
-    """Test that test_signal emits events and properly completes the observable."""
+    """Test that signal() emits events and properly completes the observable."""
 
     # Track events and completion
     event_count = 0
@@ -41,15 +41,13 @@ def test_signal_input_completes():
         completed = True
 
     # Subscribe and wait with run() - blocks until completion
-    test_signal(
+    signal(
         waveform=WaveformType.SINE,
         frequency=440.0,
         volume=0.5,
         duration=0.5,  # Short duration for testing
         output=AudioSpec(format=AudioFormat.PCM_F32LE),
-    ).pipe(
-        ops.do_action(on_next=on_next, on_completed=on_completed)
-    ).run()
+    ).pipe(ops.do_action(on_next=on_next, on_completed=on_completed)).run()
 
     # Check that we received events
     assert event_count > 0, f"Expected events but got {event_count}"
@@ -61,8 +59,11 @@ def test_signal_input_completes():
     max_wait = 2.0
     start = time.time()
     while time.time() - start < max_wait:
-        signal_threads = [t for t in threading.enumerate()
-                         if "TestSignal" in t.name or "GStreamerMainLoop" in t.name]
+        signal_threads = [
+            t
+            for t in threading.enumerate()
+            if "TestSignal" in t.name or "GStreamerMainLoop" in t.name
+        ]
         if not signal_threads:
             break
         time.sleep(0.1)

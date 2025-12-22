@@ -21,15 +21,15 @@ import time
 import pytest
 
 from dimos.stream.audio2.input.file import file_input
-from dimos.stream.audio2.input.signal import WaveformType, test_signal
+from dimos.stream.audio2.input.signal import WaveformType, signal
 from dimos.stream.audio2.output.soundcard import speaker
 from dimos.stream.audio2.types import AudioFormat, AudioSpec
 from dimos.utils.data import get_data
 
 
-def test_speaker_with_test_signal():
+def test_speaker_with_signal():
     # Clean API: pipe speaker and run to block
-    test_signal(
+    signal(
         waveform=WaveformType.SINE,
         frequency=440.0,
         volume=0.5,  # Moderate volume for testing
@@ -38,9 +38,9 @@ def test_speaker_with_test_signal():
     ).pipe(speaker()).run()
 
 
-def test_speaker_with_test_signal_encoded():
+def test_speaker_with_signal_encoded():
     # Clean API: pipe speaker and run to block
-    test_signal(
+    signal(
         waveform=WaveformType.SINE,
         frequency=440.0,
         volume=0.5,  # Moderate volume for testing

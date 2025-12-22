@@ -55,7 +55,7 @@ class FileInputNode(GStreamerSourceBase):
 
     def __init__(self, config: FileInputConfig):
         super().__init__(config)
-        self.config = config  # Type hint for better IDE support
+        self.config: FileInputConfig = config  # Type hint for better IDE support
 
     def _get_pipeline_string(self) -> str:
         """Get the file source pipeline string."""

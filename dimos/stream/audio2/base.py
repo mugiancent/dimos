@@ -133,6 +133,9 @@ class GStreamerSourceBase(GStreamerPipelineBase, ABC):
             sync: Whether to sync to clock. If None, uses False (default).
                   Subclasses can override by passing realtime config value.
         """
+        if not self._appsink:
+            return
+
         self._appsink.set_property("emit-signals", True)
 
         # Use sync parameter if provided, otherwise default to False
@@ -460,7 +463,7 @@ class GStreamerSinkBase(GStreamerPipelineBase, ABC):
     def _audio_event_to_buffer(self, event: AudioEvent) -> Gst.Buffer:
         """Convert an AudioEvent to a GStreamer buffer."""
         # Set caps based on first event
-        if self._input_format is None:
+        if self._input_format is None and self._appsrc:
             self._input_format = AudioSpec(
                 format=event.format, sample_rate=event.sample_rate, channels=event.channels
             )
@@ -512,6 +515,9 @@ class GStreamerSinkBase(GStreamerPipelineBase, ABC):
         if not self._is_playing:
             # Auto-start on first event
             self.start()
+
+        if not self._appsrc:
+            return
 
         try:
             buffer = self._audio_event_to_buffer(event)

@@ -31,6 +31,9 @@ from dimos.stream.audio2.types import (
     CompressedAudioEvent,
     RawAudioEvent,
 )
+from dimos.utils.logging_config import setup_logger
+
+logger = setup_logger("dimos.stream.audio2.utils")
 
 # Map AudioFormat to numpy dtype
 NUMPY_DTYPE_MAP = {
@@ -41,7 +44,7 @@ NUMPY_DTYPE_MAP = {
 }
 
 
-def get_numpy_dtype_for_format(format: AudioFormat) -> np.dtype:
+def get_numpy_dtype_for_format(format: AudioFormat):
     """Get numpy dtype for an AudioFormat.
 
     Args:

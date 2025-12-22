@@ -323,7 +323,7 @@ class AudioPipeline:
     """Represents a running audio pipeline that can be disposed."""
 
     def __init__(self, subscription: DisposableBase):
-        self._subscription = subscription
+        self._subscription: Optional[DisposableBase] = subscription
 
     def dispose(self) -> None:
         """Stop the audio pipeline and clean up resources."""

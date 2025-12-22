@@ -16,7 +16,7 @@
 """Soundcard output node for playing audio through system speakers."""
 
 import threading
-from typing import Optional
+from typing import Optional, Union
 
 import gi
 from pydantic import Field
@@ -51,7 +51,7 @@ class SoundcardOutputNode(GStreamerSinkBase):
 
     def __init__(self, config: SoundcardOutputConfig):
         super().__init__(config)
-        self.config = config  # Type hint for better IDE support
+        self.config: SoundcardOutputConfig = config  # Type hint for better IDE support
 
     def _get_pipeline_string(self) -> str:
         """Build the soundcard output pipeline."""
@@ -236,6 +236,7 @@ def speaker(
     node = SoundcardOutputNode(config)
 
     # Create a sink (wrapped if blocking)
+    sink: Union[BlockingSpeaker, SoundcardOutputNode]
     if blocking:
         sink = BlockingSpeaker(node)
     else:

@@ -74,7 +74,7 @@ class TestSignalNode(GStreamerSourceBase):
 
     def __init__(self, config: TestSignalConfig):
         super().__init__(config)
-        self.config = config  # Type hint for better IDE support
+        self.config: TestSignalConfig = config  # Type hint for better IDE support
 
     def _get_pipeline_string(self) -> str:
         """Build the test signal generator pipeline."""
@@ -146,7 +146,7 @@ class TestSignalNode(GStreamerSourceBase):
         return f"TestSignal[{self.config.waveform.value} @ {self.config.frequency}Hz]"
 
 
-def test_signal(
+def signal(
     waveform: WaveformType = WaveformType.SINE,
     frequency: float = 440.0,
     volume: float = 0.8,
@@ -169,10 +169,10 @@ def test_signal(
 
     Examples:
         # Generate a 1kHz sine wave
-        test_signal(frequency=1000).subscribe(speaker())
+        signal(frequency=1000).subscribe(speaker())
 
         # Generate white noise at 16kHz mono
-        test_signal(
+        signal(
             waveform=WaveformType.WHITE_NOISE,
             output=AudioSpec(
                 format=AudioFormat.PCM_F32LE,
@@ -182,7 +182,7 @@ def test_signal(
         ).subscribe(speaker())
 
         # Generate a 5 second square wave
-        test_signal(
+        signal(
             waveform=WaveformType.SQUARE,
             frequency=100,
             duration=5.0
