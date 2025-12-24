@@ -35,9 +35,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 
 
-def webxr_to_ros_position(
-    webxr_pos: tuple[float, float, float]
-) -> tuple[float, float, float]:
+def webxr_to_ros_position(webxr_pos: tuple[float, float, float]) -> tuple[float, float, float]:
     """
     Transform position from WebXR to ROS coordinate system.
 
@@ -64,7 +62,7 @@ def webxr_to_ros_position(
 
 
 def webxr_to_ros_quaternion(
-    webxr_quat: tuple[float, float, float, float]
+    webxr_quat: tuple[float, float, float, float],
 ) -> tuple[float, float, float, float]:
     """
     Transform quaternion from WebXR to ROS coordinate system.
@@ -82,11 +80,7 @@ def webxr_to_ros_quaternion(
 
     # Frame transformation matrix matching position transform:
     # ROS X = -WebXR Z, ROS Y = -WebXR X, ROS Z = WebXR Y
-    transform_matrix = np.array([
-        [ 0,  0, -1],
-        [-1,  0,  0],
-        [ 0,  1,  0]
-    ])
+    transform_matrix = np.array([[0, 0, -1], [-1, 0, 0], [0, 1, 0]])
     frame_transform = R.from_matrix(transform_matrix)
 
     # Transform the quaternion
@@ -97,8 +91,7 @@ def webxr_to_ros_quaternion(
 
 
 def webxr_to_ros_pose(
-    webxr_pos: tuple[float, float, float],
-    webxr_quat: tuple[float, float, float, float]
+    webxr_pos: tuple[float, float, float], webxr_quat: tuple[float, float, float, float]
 ) -> tuple[tuple[float, float, float], tuple[float, float, float, float]]:
     """
     Transform complete pose (position + orientation) from WebXR to ROS.
@@ -117,9 +110,7 @@ def webxr_to_ros_pose(
     return (ros_pos, ros_quat)
 
 
-def ros_to_webxr_position(
-    ros_pos: tuple[float, float, float]
-) -> tuple[float, float, float]:
+def ros_to_webxr_position(ros_pos: tuple[float, float, float]) -> tuple[float, float, float]:
     """
     Transform position from ROS to WebXR coordinate system (inverse transform).
 
@@ -146,7 +137,7 @@ def ros_to_webxr_position(
 
 
 def ros_to_webxr_quaternion(
-    ros_quat: tuple[float, float, float, float]
+    ros_quat: tuple[float, float, float, float],
 ) -> tuple[float, float, float, float]:
     """
     Transform quaternion from ROS to WebXR coordinate system (inverse transform).
@@ -161,11 +152,7 @@ def ros_to_webxr_quaternion(
     quat_ros = R.from_quat(ros_quat)
 
     # Frame transformation matrix (same as forward transform)
-    transform_matrix = np.array([
-        [ 0,  0, -1],
-        [-1,  0,  0],
-        [ 0,  1,  0]
-    ])
+    transform_matrix = np.array([[0, 0, -1], [-1, 0, 0], [0, 1, 0]])
     frame_transform = R.from_matrix(transform_matrix)
 
     # Apply inverse transformation
