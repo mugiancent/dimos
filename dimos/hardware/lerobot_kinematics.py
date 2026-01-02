@@ -118,10 +118,14 @@ class LerobotKinematics:
         q_init: NDArray[np.float64],
         target_pos: NDArray[np.float64],
         target_quat_wxyz: NDArray[np.float64],
-        active_mask: NDArray[np.bool_] | None = None,
+        position_weight: float = 1.0,
+        orientation_weight: float = 1.0,
     ) -> NDArray[np.float64]:
         """
-        Inverse kinematics using lerobot's placo-based solver.
+        Inverse kinematics using Jacobian-based iterative solver.
+
+        This uses damped least-squares (DLS) iteration to find joint angles
+        that achieve the target pose.
 
         Parameters
         ----------
@@ -131,11 +135,10 @@ class LerobotKinematics:
             Target position in world frame (meters), shape (3,).
         target_quat_wxyz:
             Target orientation quaternion (w, x, y, z), shape (4,).
-        active_mask:
-            Optional boolean mask of shape (dof,) indicating which joints
-            are allowed to move. If None, all joints are active.
-            Note: lerobot's IK doesn't directly support active_mask, so
-            this is handled by constraining inactive joints after solving.
+        position_weight:
+            Weight for position error (default 1.0).
+        orientation_weight:
+            Weight for orientation error (default 1.0).
 
         Returns
         -------
@@ -149,8 +152,76 @@ class LerobotKinematics:
         target_pos = np.asarray(target_pos, dtype=float).reshape(3)
         target_quat_wxyz = np.asarray(target_quat_wxyz, dtype=float).reshape(4)
 
+        # Convert target quaternion to scipy format for error computation
+        target_quat_xyzw = np.array([target_quat_wxyz[1], target_quat_wxyz[2], 
+                                      target_quat_wxyz[3], target_quat_wxyz[0]], dtype=float)
+        target_rot = R.from_quat(target_quat_xyzw)
+
+        # Work in radians internally
+        q = np.radians(q_init.copy())
+        
+        # Iterative IK using Jacobian
+        step_size = 0.5  # Damping factor for stability
+        
+        for _ in range(self._max_iters):
+            # Get current pose via FK
+            q_deg = np.degrees(q)
+            current_pos, current_quat_wxyz = self.fk(q_deg)
+            
+            # Position error
+            pos_error = target_pos - current_pos
+            pos_error_norm = np.linalg.norm(pos_error)
+            
+            # Orientation error (axis-angle representation)
+            current_quat_xyzw = np.array([current_quat_wxyz[1], current_quat_wxyz[2], 
+                                           current_quat_wxyz[3], current_quat_wxyz[0]], dtype=float)
+            current_rot = R.from_quat(current_quat_xyzw)
+            
+            # Rotation from current to target: R_error = R_target * R_current^-1
+            rot_error = target_rot * current_rot.inv()
+            # Convert to axis-angle (rotvec)
+            orientation_error = rot_error.as_rotvec()
+            orientation_error_norm = np.linalg.norm(orientation_error)
+            
+            # Check convergence
+            if pos_error_norm < self._tol and orientation_error_norm < self._tol:
+                break
+            
+            # Build 6D twist (position error + orientation error)
+            twist = np.concatenate([
+                position_weight * pos_error,
+                orientation_weight * orientation_error
+            ])
+            
+            # Get Jacobian at current configuration
+            J = self.jacobian(q)  # 6 x dof
+            
+            # Damped least-squares: dq = J^T * (J*J^T + λ²I)^-1 * twist
+            JJt = J @ J.T
+            A = JJt + (self._damping**2) * np.eye(6, dtype=float)
+            dq_active = J.T @ np.linalg.solve(A, twist)
+            
+            q = q + step_size * dq_active
+        return np.degrees(q)
+    
+    def ik_lerobot(
+        self,
+        q_init: NDArray[np.float64],
+        target_pos: NDArray[np.float64],
+        target_quat_wxyz: NDArray[np.float64],
+        position_weight: float = 50.0,
+        orientation_weight: float = 1.0,
+    ) -> NDArray[np.float64]:
+        """
+        Lerobot SDK IK solver.
+        
+        Note: This solver had issues with position accuracy ~ sanjaypokkali.
+        """
+        q_init = np.asarray(q_init, dtype=float).reshape(-1)
+        target_pos = np.asarray(target_pos, dtype=float).reshape(3)
+        target_quat_wxyz = np.asarray(target_quat_wxyz, dtype=float).reshape(4)
+
         # Convert quaternion (w, x, y, z) to rotation matrix
-        # scipy uses (x, y, z, w) format
         quat_xyzw = np.array([target_quat_wxyz[1], target_quat_wxyz[2], 
                               target_quat_wxyz[3], target_quat_wxyz[0]], dtype=float)
         rot = R.from_quat(quat_xyzw)
@@ -161,26 +232,14 @@ class LerobotKinematics:
         T[:3, :3] = R_matrix
         T[:3, 3] = target_pos
 
-        # lerobot inverse_kinematics expects degrees and returns degrees
         q_sol = self._lerobot_kin.inverse_kinematics(
             current_joint_pos=q_init,
             desired_ee_pose=T,
-            position_weight=50.0,
-            orientation_weight=0.01,
+            position_weight=position_weight,
+            orientation_weight=orientation_weight,
         )
 
-        # Handle active_mask if provided
-        if active_mask is not None:
-            mask = np.asarray(active_mask, dtype=bool).reshape(-1)
-            if mask.shape[0] != self.dof:
-                raise ValueError(
-                    f"active_mask must have length {self.dof}, got {mask.shape[0]}"
-                )
-            # Keep inactive joints at initial value
-            q_sol = np.asarray(q_sol, dtype=float)
-            q_sol[~mask] = q_init[~mask]
-
-        return q_sol
+        return np.asarray(q_sol, dtype=float)
 
     # ------------------------------------------------------------------
     # Jacobian & velocity-level control
