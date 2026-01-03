@@ -16,7 +16,8 @@ import threading
 
 import rclpy
 from rclpy.node import Node
-from sensor_msgs.msg import Image as ROSImage
+from sensor_msgs.msg import Image as ROSImage, CompressedImage as ROSCompressedImage
+from cv_bridge import CvBridge
 from std_msgs.msg import Bool as ROSBool
 from vision_msgs.msg import (
     BoundingBox2D as ROSBoundingBox2D,
@@ -44,10 +45,12 @@ class VisualTrackingSkillContainer(SkillModule):
     _tracking_status: bool | None = None
     _spin_thread: threading.Thread | None = None
     _running: bool = False
+    _bridge: CvBridge | None = None
 
     def __init__(self) -> None:
         super().__init__()
         self._moondream = MoondreamHostedVlModel()
+        self._bridge = CvBridge()
 
     @rpc
     def start(self) -> None:
@@ -59,7 +62,7 @@ class VisualTrackingSkillContainer(SkillModule):
         self._node = Node("visual_tracking_skill")
 
         self._image_sub = self._node.create_subscription(
-            ROSImage, "/zed/zed_node/rgb/color/rect/image", self._on_ros_image, 10
+            ROSCompressedImage, "/camera/color/image_raw/compressed", self._on_compressed_image, 10
         )
         self._bbox_pub = self._node.create_publisher(ROSDetection2DArray, "/track_3d/init_bbox", 10)
         self._tracking_sub = self._node.create_subscription(
@@ -84,8 +87,9 @@ class VisualTrackingSkillContainer(SkillModule):
             self._node.destroy_node()
         super().stop()
 
-    def _on_ros_image(self, msg: ROSImage) -> None:
-        self._latest_image = Image.from_ros_msg(msg)
+    def _on_compressed_image(self, msg: ROSCompressedImage) -> None:
+        cv_image = self._bridge.compressed_imgmsg_to_cv2(msg, 'rgb8')
+        self._latest_image = Image.from_numpy(cv_image)
 
     def _on_tracking_status(self, msg: ROSBool) -> None:
         self._tracking_status = msg.data
