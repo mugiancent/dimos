@@ -20,15 +20,20 @@ import termios
 import threading
 import time
 import tty
+from typing import TYPE_CHECKING
 
+from dimos_lcm.geometry_msgs import Pose as LCMPose
 import numpy as np
 import pytest
 
-from dimos_lcm.geometry_msgs import Pose as LCMPose, Twist
 from dimos.core import In, Module, rpc
-from dimos.utils.logging_config import setup_logger
-from dimos.msgs.geometry_msgs import Pose
 from dimos.hardware.so101_utils.so101_interface import SO101Interface
+from dimos.utils.logging_config import setup_logger
+
+if TYPE_CHECKING:
+    from dimos_lcm.geometry_msgs import Twist
+
+    from dimos.msgs.geometry_msgs import Pose
 
 logger = setup_logger(__file__)
 
@@ -81,7 +86,9 @@ class SO101Arm:
         """Move to an 'observe' pose with simple joint interpolation."""
         logger.info("Going to observe")
         # observe_angles = np.radians(np.array([-0.96703297, -0.96703296, -1.93406593, 76.65934066, -3.95604396], dtype=float))
-        observe_angles = np.array([-0.062909,-1.396263,0.208672,1.793661,-1.614142], dtype=float)
+        observe_angles = np.array(
+            [-0.062909, -1.396263, 0.208672, 1.793661, -1.614142], dtype=float
+        )
         self.arm.move_joint_ptp(observe_angles, duration=duration)
         self.release_gripper()
         time.sleep(1.0)
@@ -91,13 +98,14 @@ class SO101Arm:
     def goToRest(self, duration: float | None = None) -> None:
         """Move to a resting pose."""
 
-        q_rest = np.array([-0.03989324, -1.81284089, 1.69085964, 1.28578981, -0.00613742], dtype=float)
+        q_rest = np.array(
+            [-0.03989324, -1.81284089, 1.69085964, 1.28578981, -0.00613742], dtype=float
+        )
         self.arm.move_joint_ptp(q_rest, duration=duration)
         self.release_gripper()
         time.sleep(1.0)
         self.close_gripper()
         time.sleep(0.5)
-
 
     def softStop(self) -> None:
         """Move to zero and then disable torque (no hard 'kill')."""

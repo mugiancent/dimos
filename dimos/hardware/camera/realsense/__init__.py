@@ -20,7 +20,7 @@ from dimos.msgs.sensor_msgs.CameraInfo import CalibrationProvider
 
 # Check if RealSense SDK is available
 try:
-    import pyrealsense2 as rs  # type: ignore[import-not-found] # noqa: F401
+    import pyrealsense2 as rs  # type: ignore[import-not-found]
 
     HAS_REALSENSE_SDK = True
 except ImportError:
@@ -56,5 +56,3 @@ __all__ = [
     "RealSenseCamera",
     "RealSenseModule",
 ]
-
-

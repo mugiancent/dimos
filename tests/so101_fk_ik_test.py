@@ -1,5 +1,19 @@
 #!/usr/bin/env python3
 
+# Copyright 2025 Dimensional Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """
 Test script for SO101Arm - Gripper open/close and end-effector movement test.
 
@@ -35,13 +49,13 @@ def test_gripper_and_movement(port: str = "/dev/ttyACM0", wait_time: float = 2.0
     print("=" * 60)
     print("SO101Arm Gripper and Movement Test")
     print("=" * 60)
-    
+
     print("\nInitializing SO101Arm...")
     arm = SO101Arm(port=port)
     print("SO101Arm initialized")
-    
+
     original_pose = None
-    
+
     try:
         # Test 1: Open gripper
         print("\n" + "=" * 60)
@@ -51,7 +65,7 @@ def test_gripper_and_movement(port: str = "/dev/ttyACM0", wait_time: float = 2.0
         time.sleep(wait_time)
         position_m, effort = arm.get_gripper_feedback()
         print(f"✓ Gripper opened - Position: {position_m:.3f} m, Effort: {effort:.3f}")
-        
+
         # Test 2: Close gripper
         print("\n" + "=" * 60)
         print("TEST 2: Closing gripper...")
@@ -60,7 +74,7 @@ def test_gripper_and_movement(port: str = "/dev/ttyACM0", wait_time: float = 2.0
         time.sleep(wait_time)
         position_m, effort = arm.get_gripper_feedback()
         print(f"✓ Gripper closed - Position: {position_m:.3f} m, Effort: {effort:.3f}")
-        
+
         # Test 3: Get current pose and move end-effector
         print("\n" + "=" * 60)
         print("TEST 3: Getting current end-effector pose...")
@@ -89,7 +103,7 @@ def test_gripper_and_movement(port: str = "/dev/ttyACM0", wait_time: float = 2.0
             f"y={current_pose.orientation.y:.3f}, z={current_pose.orientation.z:.3f}, "
             f"w={current_pose.orientation.w:.3f}"
         )
-        
+
         # Create new pose with position offset
         # Offset: +5cm in x, +10cm in y, -10cm in z
         new_position = Vector3(
@@ -97,7 +111,7 @@ def test_gripper_and_movement(port: str = "/dev/ttyACM0", wait_time: float = 2.0
             current_pose.position.y + 0.2,
             current_pose.position.z - 0.05,
         )
-        
+
         # Rotate current orientation by 90 degrees around y-axis
         current_quat_xyzw = [
             current_pose.orientation.x,
@@ -109,7 +123,7 @@ def test_gripper_and_movement(port: str = "/dev/ttyACM0", wait_time: float = 2.0
         y_rotation = R.from_euler("y", 90.0, degrees=True)
         new_rot = current_rot * y_rotation
         new_quat_xyzw = new_rot.as_quat()
-        
+
         # Quaternion accepts positional args (x, y, z, w) or a sequence
         new_orientation = Quaternion(
             new_quat_xyzw[0],
@@ -117,9 +131,9 @@ def test_gripper_and_movement(port: str = "/dev/ttyACM0", wait_time: float = 2.0
             new_quat_xyzw[2],
             new_quat_xyzw[3],
         )
-        
+
         new_pose = Pose(position=new_position, orientation=new_orientation)
-        
+
         print("\n" + "=" * 60)
         print("TEST 4: Moving end-effector...")
         print("=" * 60)
@@ -133,10 +147,10 @@ def test_gripper_and_movement(port: str = "/dev/ttyACM0", wait_time: float = 2.0
             f"w={new_orientation.w:.3f}"
         )
         print("  Using PTP mode (duration: 2.0 seconds)...")
-        
+
         arm.cmd_ee_pose(new_pose, line_mode=False, duration=2.0)
         time.sleep(2.5)  # Wait for movement to complete
-        
+
         # Test 5: Verify final position
         print("\n" + "=" * 60)
         print("TEST 5: Verifying final end-effector position...")
@@ -151,7 +165,7 @@ def test_gripper_and_movement(port: str = "/dev/ttyACM0", wait_time: float = 2.0
             f"y={final_pose.orientation.y:.3f}, z={final_pose.orientation.z:.3f}, "
             f"w={final_pose.orientation.w:.3f}"
         )
-        
+
         # Calculate position error
         pos_error = np.array(
             [
@@ -161,10 +175,12 @@ def test_gripper_and_movement(port: str = "/dev/ttyACM0", wait_time: float = 2.0
             ]
         )
         pos_error_norm = np.linalg.norm(pos_error)
-        print(f"\n  Position error: {pos_error_norm*1000:.2f} mm")
-        print(f"  Position error components: x={pos_error[0]*1000:.2f} mm, "
-              f"y={pos_error[1]*1000:.2f} mm, z={pos_error[2]*1000:.2f} mm")
-        
+        print(f"\n  Position error: {pos_error_norm * 1000:.2f} mm")
+        print(
+            f"  Position error components: x={pos_error[0] * 1000:.2f} mm, "
+            f"y={pos_error[1] * 1000:.2f} mm, z={pos_error[2] * 1000:.2f} mm"
+        )
+
         # Calculate orientation error (quaternion distance)
         final_quat_xyzw = [
             final_pose.orientation.x,
@@ -176,16 +192,17 @@ def test_gripper_and_movement(port: str = "/dev/ttyACM0", wait_time: float = 2.0
         rot_error = (new_rot.inv() * final_rot).as_rotvec()
         rot_error_deg = np.linalg.norm(rot_error) * 180 / np.pi
         print(f"  Orientation error: {rot_error_deg:.2f} degrees")
-        
+
         print("\n" + "=" * 60)
         print("All tests completed successfully!")
         print("=" * 60)
-        
+
     except KeyboardInterrupt:
         print("\n\n✗ Test interrupted by user")
     except Exception as e:
         print(f"\n\n✗ Error during test: {e}")
         import traceback
+
         traceback.print_exc()
     finally:
         # Restore original pose before disabling
@@ -208,7 +225,7 @@ def test_gripper_and_movement(port: str = "/dev/ttyACM0", wait_time: float = 2.0
                 print("✓ Original pose restored")
             except Exception as restore_error:
                 print(f"⚠ Warning: Failed to restore original pose: {restore_error}")
-        
+
         print("\nDisabling arm...")
         arm.disable()
         print("✓ Arm disabled")
@@ -216,4 +233,3 @@ def test_gripper_and_movement(port: str = "/dev/ttyACM0", wait_time: float = 2.0
 
 if __name__ == "__main__":
     test_gripper_and_movement()
-

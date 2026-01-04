@@ -140,9 +140,7 @@ class ManipulationModule(Module):
             # Default calibration for SO101 arm wrist camera
             # Format: [x, y, z, rx, ry, rz] in meters and radians
             if arm == "so101":
-                ee_to_camera_6dof = [
-                    0.0246, 0.0407, -0.0670,  -0.3822, 0.00176, 3.14153
-                ]
+                ee_to_camera_6dof = [0.0246, 0.0407, -0.0670, -0.3822, 0.00176, 3.14153]
             else:
                 ee_to_camera_6dof = [-0.065, 0.03, -0.095, 0.0, -1.57, 0.0]
         pos = Vector3(ee_to_camera_6dof[0], ee_to_camera_6dof[1], ee_to_camera_6dof[2])
@@ -604,10 +602,10 @@ class ManipulationModule(Module):
         """
         Apply gripper offset for specific arm types.
         For SO101, applies a +1cm Y offset to account for fixed left finger.
-        
+
         Args:
             pose: Original target pose
-            
+
         Returns:
             Offset target pose
         """
@@ -622,7 +620,7 @@ class ManipulationModule(Module):
             # Apply +1cm Y offset
             # new_pose.position.y += 0.01
             return new_pose
-        
+
         return pose
 
     def _update_tracking(self, detection_3d_array: Detection3DArray | None) -> bool:
@@ -761,10 +759,10 @@ class ManipulationModule(Module):
                 )
 
                 logger.info(f"Executing grasp: gripper={gripper_opening * 1000:.1f}mm")
-                
+
                 # Apply gripper offset for SO101 arm
                 final_target_pose = self._apply_gripper_offset(target_pose)
-                
+
                 self.arm.cmd_gripper_ctrl(gripper_opening)
                 self.arm.cmd_ee_pose(final_target_pose, line_mode=True)
                 self.current_executed_pose = final_target_pose

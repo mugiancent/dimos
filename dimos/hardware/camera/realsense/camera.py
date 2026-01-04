@@ -293,7 +293,9 @@ class RealSenseCamera:
 
             # Get vertices and texture coordinates
             vertices = np.asanyarray(points.get_vertices()).view(np.float32).reshape(-1, 3)
-            tex_coords = np.asanyarray(points.get_texture_coordinates()).view(np.float32).reshape(-1, 2)
+            tex_coords = (
+                np.asanyarray(points.get_texture_coordinates()).view(np.float32).reshape(-1, 2)
+            )
 
             # Get colors from color frame
             color_image = np.asanyarray(color_frame.get_data())

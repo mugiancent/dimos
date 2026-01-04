@@ -70,8 +70,3 @@ def test_realsense_camera_initialization() -> None:
     assert camera.fps == 30
 
     print("✓ RealSense camera initialization test passed!")
-
-
-
-
-

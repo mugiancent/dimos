@@ -16,13 +16,13 @@ import json
 import logging
 import time
 
-import numpy as np
 from lerobot.motors import Motor, MotorCalibration, MotorNormMode
 from lerobot.motors.feetech import FeetechMotorsBus, OperatingMode
+import numpy as np
 from scipy.spatial.transform import Rotation as R, Slerp
 
 from dimos.hardware.lerobot_kinematics import LerobotKinematics
-from dimos.msgs.geometry_msgs import Pose, Vector3, Quaternion
+from dimos.msgs.geometry_msgs import Pose, Quaternion, Vector3
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +65,9 @@ class SO101Interface:
         self.gripper_name = "gripper"
         # Joint angle offsets in degrees (motor frame → robot frame)
         # Measured offsets when the arm is mechanically at zero.
-        self.joint_offsets_deg = np.array([0,0.26373626, 2.59340659, 0.65934066, 0.21978022], dtype=float)
+        self.joint_offsets_deg = np.array(
+            [0, 0.26373626, 2.59340659, 0.65934066, 0.21978022], dtype=float
+        )
 
         self.motor_ids: dict[str, int] = {
             "shoulder_pan": 1,
@@ -82,7 +84,7 @@ class SO101Interface:
         # Initialize kinematics
         try:
             self.kinematics = LerobotKinematics(
-                self.urdf_path, 
+                self.urdf_path,
                 self.ee_link_name,
                 joint_names=self.motor_names,
             )
@@ -102,16 +104,14 @@ class SO101Interface:
     def _load_calibration(self) -> dict[str, MotorCalibration]:
         """Load motor calibration from JSON file."""
         try:
-            with open(self.calibration_path, "r") as f:
+            with open(self.calibration_path) as f:
                 calib_data = json.load(f)
             calibration: dict[str, MotorCalibration] = {}
             for name, data in calib_data.items():
                 calibration[name] = MotorCalibration(**data)
             return calibration
         except Exception as e:
-            logger.warning(
-                f"Failed to load calibration from {self.calibration_path}: {e}"
-            )
+            logger.warning(f"Failed to load calibration from {self.calibration_path}: {e}")
             return {}
 
     def connect(self) -> None:
@@ -164,9 +164,7 @@ class SO101Interface:
 
             for motor in self.bus.motors:
                 # Position control for all motors
-                self.bus.write(
-                    "Operating_Mode", motor, OperatingMode.POSITION.value
-                )
+                self.bus.write("Operating_Mode", motor, OperatingMode.POSITION.value)
 
                 # PID gains – tuned for smoother motion
                 self.bus.write("P_Coefficient", motor, 16)
@@ -182,7 +180,7 @@ class SO101Interface:
             logger.info("SO-101 torque enabled")
             return True
         else:
-            return False 
+            return False
 
     def disable(self) -> None:
         """Disable motor torque."""
@@ -233,9 +231,7 @@ class SO101Interface:
 
         q = np.asarray(q, dtype=float)
         if q.shape[0] != len(self.motor_names):
-            raise ValueError(
-                f"Expected {len(self.motor_names)} joint values, got {q.shape[0]}"
-            )
+            raise ValueError(f"Expected {len(self.motor_names)} joint values, got {q.shape[0]}")
 
         q_deg = q if degree else np.degrees(q)
         cmd = {name: float(q_deg[i]) for i, name in enumerate(self.motor_names)}
@@ -254,9 +250,7 @@ class SO101Interface:
 
         q_target = np.asarray(q_target, dtype=float)
         if q_target.shape[0] != len(self.motor_names):
-            raise ValueError(
-                f"Expected {len(self.motor_names)} joints, got {q_target.shape[0]}"
-            )
+            raise ValueError(f"Expected {len(self.motor_names)} joints, got {q_target.shape[0]}")
 
         q_start = self.get_joint_angles()
         dq = q_target - q_start
@@ -312,7 +306,7 @@ class SO101Interface:
             raise RuntimeError("Kinematics not initialized.")
 
         q_start = np.asarray(current_q, dtype=float)
-        
+
         # LerobotKinematics uses degrees, so convert
         q_start_deg = np.degrees(q_start)
         q_target_kin_deg = self.kinematics.ik(q_start_deg, target_pos, target_quat_wxyz)
@@ -514,7 +508,7 @@ class SO101Interface:
                 # If overloaded, we likely gripped something hard.
                 # Return max load (1000) so the controller thinks we have contact.
                 return 0.0, 1000.0
-            
+
             logger.warning(f"Failed to read gripper state: {e}")
             return 0.0, 0.0
 

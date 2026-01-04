@@ -24,10 +24,10 @@ import threading
 import time
 
 import cv2
-import numpy as np
 
 # Import LCM message types
 from dimos_lcm.sensor_msgs import Image
+import numpy as np
 
 from dimos.protocol.pubsub.lcmpubsub import LCM, Topic
 from dimos.robot.lerobot.so101_arm import SO101ArmRobot
@@ -348,4 +348,3 @@ async def run_so101_arm_with_viz():
 if __name__ == "__main__":
     # Run the robot
     asyncio.run(run_so101_arm_with_viz())
-

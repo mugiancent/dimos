@@ -1096,13 +1096,13 @@ def extract_centroids_from_masks(
         # This matches the logic in test_sam_webcam_detection.py
         if len(Z) > 0:
             centroid_z = np.percentile(Z, 25)
-            
+
             # Recalculate X and Y using the robust Z
             # Note: We use the mean pixel coordinates (geometric center of mask)
             # projected to the robust depth
             mean_x_pixel = np.mean(x_coords)
             mean_y_pixel = np.mean(y_coords)
-            
+
             centroid_x = (mean_x_pixel - cx) * centroid_z / fx
             centroid_y = (mean_y_pixel - cy) * centroid_z / fy
         else:

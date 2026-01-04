@@ -1,6 +1,6 @@
 <mujoco model="scene">
     <include file="so101_new_calib.xml" />
-    
+
     <option timestep="0.0005" iterations="100" solver="Newton" tolerance="1e-8"/>
 
     <visual>
