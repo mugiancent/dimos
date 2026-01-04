@@ -400,10 +400,13 @@ def project_2d_points_to_3d_cpu(
         fx, fy, cx, cy = [float(v) for v in camera_intrinsics]
     else:
         camera_matrix = np.array(camera_intrinsics, dtype=np.float64)
-        fx = camera_matrix[0, 0]
-        fy = camera_matrix[1, 1]
-        cx = camera_matrix[0, 2]
-        cy = camera_matrix[1, 2]
+        if camera_matrix.ndim == 1 and camera_matrix.size == 4:
+             fx, fy, cx, cy = camera_matrix
+        else:
+             fx = camera_matrix[0, 0]
+             fy = camera_matrix[1, 1]
+             cx = camera_matrix[0, 2]
+             cy = camera_matrix[1, 2]
     X = (valid_points_2d[:, 0] - cx) * valid_depths / fx
     Y = (valid_points_2d[:, 1] - cy) * valid_depths / fy
     Z = valid_depths

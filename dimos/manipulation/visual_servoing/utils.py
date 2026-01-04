@@ -267,7 +267,7 @@ def update_target_grasp_pose(
         return updated_pose
 
 
-def is_target_reached(target_pose: Pose, current_pose: Pose, tolerance: float = 0.01) -> bool:
+def is_target_reached(target_pose: Pose, current_pose: Pose, tolerance: float = 0.1) -> bool:
     """
     Check if the target pose has been reached within tolerance.
 

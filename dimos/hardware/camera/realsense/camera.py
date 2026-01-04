@@ -34,14 +34,23 @@ from dimos.utils.logging_config import setup_logger
 logger = setup_logger(__name__)
 
 
+def safe_set(sensor, option, value):
+    """Safely set a sensor option, handling cases where it's not supported."""
+    try:
+        if sensor.supports(option):
+            sensor.set_option(option, value)
+    except Exception as e:
+        logger.warning(f"Couldn't set {option} to {value}: {e}")
+
+
 class RealSenseCamera:
     """Intel RealSense Camera capture with depth processing."""
 
     def __init__(
         self,
         serial_number: str | None = None,
-        width: int = 1280,
-        height: int = 720,
+        width: int = 640,
+        height: int = 480,
         fps: int = 30,
         enable_color: bool = True,
         enable_depth: bool = True,
@@ -54,9 +63,9 @@ class RealSenseCamera:
 
         Args:
             serial_number: Camera serial number (None for first available)
-            width: Frame width
-            height: Frame height
-            fps: Frame rate
+            width: Frame width (default: 640 for D435)
+            height: Frame height (default: 480 for D435)
+            fps: Frame rate (default: 30)
             enable_color: Enable RGB stream
             enable_depth: Enable depth stream
             enable_infrared: Enable infrared stream
@@ -76,8 +85,10 @@ class RealSenseCamera:
         self.config = rs.config()
         self.align = None
 
-        # Filters for depth processing
+        # Recommended filter chain for depth processing
         self.decimation_filter = rs.decimation_filter()
+        self.depth_to_disparity = rs.disparity_transform(True)
+        self.disparity_to_depth = rs.disparity_transform(False)
         self.spatial_filter = rs.spatial_filter()
         self.temporal_filter = rs.temporal_filter()
         self.hole_filling_filter = rs.hole_filling_filter()
@@ -86,6 +97,7 @@ class RealSenseCamera:
         self.color_intrinsics = None
         self.depth_intrinsics = None
         self.depth_scale = None
+        self.depth_sensor = None
 
         self.is_opened = False
 
@@ -96,7 +108,7 @@ class RealSenseCamera:
             if self.serial_number:
                 self.config.enable_device(self.serial_number)
 
-            # Enable streams
+            # Enable streams (using 640x480 for D435 as recommended)
             if self.enable_color:
                 self.config.enable_stream(
                     rs.stream.color, self.width, self.height, rs.format.bgr8, self.fps
@@ -121,10 +133,26 @@ class RealSenseCamera:
             logger.info(f"Serial Number: {device.get_info(rs.camera_info.serial_number)}")
             logger.info(f"Firmware: {device.get_info(rs.camera_info.firmware_version)}")
 
-            # Get depth scale
-            depth_sensor = device.first_depth_sensor()
-            self.depth_scale = depth_sensor.get_depth_scale()
+            # Get depth sensor and configure for better quality
+            self.depth_sensor = device.first_depth_sensor()
+            self.depth_scale = float(self.depth_sensor.get_depth_scale())
             logger.info(f"Depth Scale: {self.depth_scale}")
+
+            # Configure depth sensor for better quality (D435 specific)
+            # Turn on IR projector (emitter) + crank laser power
+            safe_set(self.depth_sensor, rs.option.emitter_enabled, 1.0)
+            safe_set(self.depth_sensor, rs.option.laser_power, 360.0)
+
+            # Depth preset (High Accuracy mode if supported)
+            safe_set(self.depth_sensor, rs.option.visual_preset, 2.0)  # High Accuracy
+
+            # Configure filter parameters
+            safe_set(self.decimation_filter, rs.option.filter_magnitude, 2.0)
+            safe_set(self.spatial_filter, rs.option.filter_smooth_alpha, 0.5)
+            safe_set(self.spatial_filter, rs.option.filter_smooth_delta, 20.0)
+            safe_set(self.spatial_filter, rs.option.holes_fill, 3.0)
+            safe_set(self.temporal_filter, rs.option.filter_smooth_alpha, 0.4)
+            safe_set(self.temporal_filter, rs.option.filter_smooth_delta, 20.0)
 
             # Set up alignment if requested
             if self.align_depth_to_color and self.enable_color and self.enable_depth:
@@ -159,7 +187,8 @@ class RealSenseCamera:
 
         Returns:
             Tuple of (color_image, depth_image, infrared_image) as numpy arrays.
-            Depth is in meters (float32). Returns None for disabled streams.
+            Depth is in meters (float32) with NaN for invalid pixels.
+            Returns None for disabled streams.
         """
         if not self.is_opened:
             logger.error("RealSense camera not opened")
@@ -187,16 +216,24 @@ class RealSenseCamera:
             if self.enable_depth:
                 depth_frame = frames.get_depth_frame()
                 if depth_frame:
-                    # Apply filters if requested
+                    # Apply recommended filter chain if requested
                     if apply_filters:
-                        depth_frame = self.decimation_filter.process(depth_frame)
+                        # Filtering in the recommended order (in disparity space for better results)
+                        # Skip decimation when alignment is enabled, as it reduces resolution
+                        # and defeats the purpose of aligning depth to color
+                        if not self.align_depth_to_color:
+                            depth_frame = self.decimation_filter.process(depth_frame)
+                        depth_frame = self.depth_to_disparity.process(depth_frame)
                         depth_frame = self.spatial_filter.process(depth_frame)
                         depth_frame = self.temporal_filter.process(depth_frame)
+                        depth_frame = self.disparity_to_depth.process(depth_frame)
                         depth_frame = self.hole_filling_filter.process(depth_frame)
 
                     # Convert to numpy and scale to meters
-                    depth_data = np.asanyarray(depth_frame.get_data())
+                    depth_data = np.asanyarray(depth_frame.get_data())  # uint16
                     depth_image = depth_data.astype(np.float32) * self.depth_scale
+                    # Set invalid pixels (0 depth) to NaN
+                    depth_image[depth_data == 0] = np.nan
 
             # Get infrared frame
             if self.enable_infrared:
@@ -244,8 +281,10 @@ class RealSenseCamera:
             # Apply filters
             if apply_filters:
                 depth_frame = self.decimation_filter.process(depth_frame)
+                depth_frame = self.depth_to_disparity.process(depth_frame)
                 depth_frame = self.spatial_filter.process(depth_frame)
                 depth_frame = self.temporal_filter.process(depth_frame)
+                depth_frame = self.disparity_to_depth.process(depth_frame)
                 depth_frame = self.hole_filling_filter.process(depth_frame)
 
             # Create point cloud
@@ -418,9 +457,9 @@ class RealSenseModule(Module):
 
         Args:
             serial_number: Camera serial number (None for first available)
-            width: Frame width
-            height: Frame height
-            fps: Camera frame rate
+            width: Frame width (default: 640 for D435)
+            height: Frame height (default: 480 for D435)
+            fps: Camera frame rate (default: 30)
             enable_color: Enable RGB stream
             enable_depth: Enable depth stream
             align_depth_to_color: Align depth frames to color frames
@@ -590,7 +629,7 @@ class RealSenseModule(Module):
     def _publish_depth_image(self, depth: np.ndarray, header: Header) -> None:
         """Publish depth image as LCM message."""
         try:
-            # Depth is float32 in meters
+            # Depth is float32 in meters with NaN for invalid pixels
             msg = Image(
                 data=depth,
                 format=ImageFormat.DEPTH,
@@ -698,5 +737,3 @@ class RealSenseModule(Module):
         if self.realsense_camera:
             return self.realsense_camera.get_camera_info()
         return {}
-
-

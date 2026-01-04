@@ -119,7 +119,7 @@ class LerobotKinematics:
         target_pos: NDArray[np.float64],
         target_quat_wxyz: NDArray[np.float64],
         position_weight: float = 1.0,
-        orientation_weight: float = 1.0,
+        orientation_weight: float = 0.0,
     ) -> NDArray[np.float64]:
         """
         Inverse kinematics using Jacobian-based iterative solver.

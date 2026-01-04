@@ -68,10 +68,9 @@ class SO101Interface:
         self.gripper_name = "gripper"
         # Joint angle offsets in degrees (motor frame → robot frame)
         # Measured offsets when the arm is mechanically at zero.
-        # self.joint_offsets_deg = np.array(
-        #     [-0.6593, 1.3626, 4.7473, -0.0879, 0.2637], dtype=float
-        # )
-        self.joint_offsets_deg = np.array([-0.57142857, 4.79120879, 4.21978022, 1.40659341, 0.17582418], dtype=float)
+        # self.joint_offsets_deg = np.array([0,0,0,0,0], dtype=float)
+        self.joint_offsets_deg = np.array([0,0.26373626, 2.59340659, 0.65934066, 0.21978022], dtype=float)
+
         self.motor_ids: Dict[str, int] = {
             "shoulder_pan": 1,
             "shoulder_lift": 2,
@@ -244,9 +243,7 @@ class SO101Interface:
             )
 
         q_deg = q if degree else np.degrees(q)
-        # Convert robot-frame command → motor-frame by removing offsets
-        q_deg_motor = q_deg + self.joint_offsets_deg
-        cmd = {name: float(q_deg_motor[i]) for i, name in enumerate(self.motor_names)}
+        cmd = {name: float(q_deg[i]) for i, name in enumerate(self.motor_names)}
         self.bus.sync_write("Goal_Position", cmd)
 
     def move_joint_ptp(self, q_target: np.ndarray, duration: float | None = None) -> None:
@@ -519,6 +516,13 @@ class SO101Interface:
             load = float(efforts)
             return position_m, load
         except Exception as e:
+            msg = str(e)
+            if "Overload error" in msg or "Overload" in msg:
+                # If overloaded, we likely gripped something hard.
+                # Return max load (1000) so the controller thinks we have contact.
+                # We don't know the position, but 0.0 is safe (closed).
+                return 0.0, 1000.0
+            
             logger.warning(f"Failed to read gripper state: {e}")
             return 0.0, 0.0
 

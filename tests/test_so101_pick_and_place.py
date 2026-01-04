@@ -61,14 +61,12 @@ class VisualizationNode:
         self.lcm = LCM()
         self.latest_viz = None
         self.latest_camera = None
-        self.latest_sam_viz = None
         self._running = False
         self.robot = robot
 
         # Subscribe to visualization topic (SO101 uses different topic names)
         self.viz_topic = Topic("/viz/output", Image)
         self.camera_topic = Topic("/camera/rgb", Image)
-        self.sam_viz_topic = Topic("/viz/sam", Image)
 
     def start(self):
         """Start the visualization node."""
@@ -79,8 +77,6 @@ class VisualizationNode:
         self.lcm.subscribe(self.viz_topic, self._on_viz_image)
         # Subscribe to camera topic for point selection
         self.lcm.subscribe(self.camera_topic, self._on_camera_image)
-        # Subscribe to SAM visualization topic
-        self.lcm.subscribe(self.sam_viz_topic, self._on_sam_viz_image)
 
         logger.info("Visualization node started")
 
@@ -115,19 +111,6 @@ class VisualizationNode:
         except Exception as e:
             logger.error(f"Error processing camera image: {e}")
 
-    def _on_sam_viz_image(self, msg: Image, topic: str):
-        """Handle SAM visualization image messages."""
-        try:
-            # Convert LCM message to numpy array
-            data = np.frombuffer(msg.data, dtype=np.uint8)
-            if msg.encoding == "rgb8":
-                image = data.reshape((msg.height, msg.width, 3))
-                # Convert RGB to BGR for OpenCV
-                image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-                self.latest_sam_viz = image
-        except Exception as e:
-            logger.error(f"Error processing SAM visualization image: {e}")
-
     def run_visualization(self):
         """Run the visualization loop with user interaction."""
         global mouse_click, camera_mouse_click, pick_location, place_location, place_mode
@@ -138,8 +121,6 @@ class VisualizationNode:
 
         cv2.namedWindow("Camera Feed")
         cv2.setMouseCallback("Camera Feed", mouse_callback, "Camera Feed")
-
-        cv2.namedWindow("SAM Detection")
 
         print("=== SO101 Arm Robot - Pick and Place ===")
         print("Control mode: Module-based with LCM communication")
@@ -228,10 +209,6 @@ class VisualizationNode:
             # Show visualization if available
             if self.latest_viz is not None:
                 cv2.imshow("Pick and Place", self.latest_viz)
-
-            # Show SAM detection visualization if available
-            if self.latest_sam_viz is not None:
-                cv2.imshow("SAM Detection", self.latest_sam_viz)
 
             # Handle keyboard input
             key = cv2.waitKey(1) & 0xFF

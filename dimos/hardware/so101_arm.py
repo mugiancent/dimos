@@ -75,7 +75,6 @@ class SO101Arm:
         logger.info("Going to zero")
         q_zero = np.zeros(5, dtype=float)
         self.arm.move_joint_ptp(q_zero, duration=duration)
-        
         self.release_gripper()
         time.sleep(1.0)
         self.close_gripper()
@@ -84,8 +83,8 @@ class SO101Arm:
     def gotoObserve(self, duration: float | None = None) -> None:
         """Move to an 'observe' pose with simple joint interpolation."""
         logger.info("Going to observe")
-        observe_angles = np.array([-0.184890,-0.056771,-0.566177,1.785990,0.007672], dtype=float)
-        # observe_angles = np.array([0,0,0,1.35990,0], dtype=float)
+        # observe_angles = np.radians(np.array([-0.96703297, -0.96703296, -1.93406593, 76.65934066, -3.95604396], dtype=float))
+        observe_angles = np.array([-0.062909,-1.396263,0.208672,1.793661,-1.614142], dtype=float)
         self.arm.move_joint_ptp(observe_angles, duration=duration)
         print("ee pose: ", self.get_ee_pose())
         self.release_gripper()
@@ -202,8 +201,7 @@ class SO101Arm:
         start = max(target_closed, min(0.04, pos))
         steps = 10
         backoff = 0.002
-        threshold = 0.8 * commanded_effort  # same heuristic as gripper_object_detected
-        print("threshold: ", threshold)
+        threshold = 0.6
         for i in range(steps):
             alpha = (i + 1) / steps
             cmd_pos = start + (target_closed - start) * alpha

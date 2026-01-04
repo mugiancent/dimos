@@ -141,15 +141,9 @@ class ManipulationModule(Module):
             # Format: [x, y, z, rx, ry, rz] in meters and radians
             if arm == "so101":
                 ee_to_camera_6dof = [
-                    -0.04462683,
-                    0.02325090,
-                    -0.06492827,
-                    -0.3405,
-                    0.3405,
-                    -1.5436,
+                    0.0246, 0.0407, -0.0670,  -0.3822, 0.00176, 3.14153
                 ]
             else:
-                # Default for piper arm (legacy values)
                 ee_to_camera_6dof = [-0.065, 0.03, -0.095, 0.0, -1.57, 0.0]
         pos = Vector3(ee_to_camera_6dof[0], ee_to_camera_6dof[1], ee_to_camera_6dof[2])
         rot = Vector3(ee_to_camera_6dof[3], ee_to_camera_6dof[4], ee_to_camera_6dof[5])
@@ -173,7 +167,7 @@ class ManipulationModule(Module):
         self.grasp_distance_range = 0.032
         self.grasp_close_delay = 21.0
         self.grasp_reached_time = None
-        self.gripper_max_opening = 0.07
+        self.gripper_max_opening = 0.1
 
         # Workspace limits and dynamic pitch parameters
         self.workspace_min_radius = 0.15
@@ -241,10 +235,8 @@ class ManipulationModule(Module):
         unsub = self.rgb_image.subscribe(self._on_rgb_image)
         self._disposables.add(Disposable(unsub))
 
-        # Only subscribe to depth if not SO101 (SO101 has RGB-only camera)
-        if self.arm_type != "so101" and self.depth_image is not None:
-            unsub = self.depth_image.subscribe(self._on_depth_image)
-            self._disposables.add(Disposable(unsub))
+        unsub = self.depth_image.subscribe(self._on_depth_image)
+        self._disposables.add(Disposable(unsub))
 
         unsub = self.camera_info.subscribe(self._on_camera_info)
         self._disposables.add(Disposable(unsub))
@@ -382,7 +374,6 @@ class ManipulationModule(Module):
                 points_3d_world = transform_points_3d(
                     points_3d_camera,
                     camera_transform,
-                    to_robot=True,
                 )
 
                 place_position = np.mean(points_3d_world, axis=0)
@@ -398,7 +389,6 @@ class ManipulationModule(Module):
 
         self.task_failed = False
         self.stop_event.clear()
-
         if self.task_thread and self.task_thread.is_alive():
             self.stop_event.set()
             self.task_thread.join(timeout=1.0)
@@ -603,6 +593,31 @@ class ManipulationModule(Module):
             return True
         return False
 
+    def _apply_gripper_offset(self, pose: Pose) -> Pose:
+        """
+        Apply gripper offset for specific arm types.
+        For SO101, applies a +1cm Y offset to account for fixed left finger.
+        
+        Args:
+            pose: Original target pose
+            
+        Returns:
+            Offset target pose
+        """
+        if self.arm_type == "so101":
+            # Clone pose to avoid modifying original
+            new_pose = Pose(
+                position=Vector3(pose.position.x, pose.position.y, pose.position.z),
+                orientation=Quaternion(
+                    pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w
+                ),
+            )
+            # Apply +1cm Y offset
+            # new_pose.position.y += 0.01
+            return new_pose
+        
+        return pose
+
     def _update_tracking(self, detection_3d_array: Detection3DArray | None) -> bool:
         """Update tracking with new detections."""
         if not detection_3d_array or not self.pbvs:
@@ -662,7 +677,7 @@ class ManipulationModule(Module):
 
         ee_pose = self.arm.get_ee_pose()  # type: ignore[no-untyped-call]
         dynamic_pitch = self.calculate_dynamic_grasp_pitch(self.pbvs.current_target.bbox.center)  # type: ignore[attr-defined]
-
+        print("dynamic_pitch", dynamic_pitch)
         _, _, _, has_target, target_pose = self.pbvs.compute_control(  # type: ignore[attr-defined]
             ee_pose, self.pregrasp_distance, dynamic_pitch
         )
@@ -691,6 +706,14 @@ class ManipulationModule(Module):
                 self.target_updated = False
                 self.adjustment_count += 1
                 time.sleep(0.2)
+            # elif not self.waiting_for_reach and not self.target_updated:
+            #      # If target hasn't updated but we have a valid target pose that we are close to,
+            #      # consider it a "reached" pose to allow stabilization check to proceed.
+            #      if target_pose and self.current_executed_pose:
+            #          # Check if the new target_pose is effectively the same as current_executed_pose
+            #          # If so, append to reached_poses
+            #          self.reached_poses.append(self.current_executed_pose)
+            #          time.sleep(0.1) # Prevent busy loop
 
     def execute_grasp(self) -> None:
         """Execute grasp stage: move to final grasp position."""
@@ -731,9 +754,13 @@ class ManipulationModule(Module):
                 )
 
                 logger.info(f"Executing grasp: gripper={gripper_opening * 1000:.1f}mm")
+                
+                # Apply gripper offset for SO101 arm
+                final_target_pose = self._apply_gripper_offset(target_pose)
+                
                 self.arm.cmd_gripper_ctrl(gripper_opening)
-                self.arm.cmd_ee_pose(target_pose, line_mode=True)
-                self.current_executed_pose = target_pose
+                self.arm.cmd_ee_pose(final_target_pose, line_mode=True)
+                self.current_executed_pose = final_target_pose
                 self.waiting_for_reach = True
                 self.waiting_start_time = time.time()
 
@@ -757,9 +784,10 @@ class ManipulationModule(Module):
             return
         if not self.waiting_for_reach:
             logger.info("Retracting to pre-grasp position")
+            self.arm.close_gripper()
+            time.sleep(1.0)
             self.arm.cmd_ee_pose(self.final_pregrasp_pose, line_mode=True)
             self.current_executed_pose = self.final_pregrasp_pose
-            self.arm.close_gripper()
             self.waiting_for_reach = True
             self.waiting_start_time = time.time()  # type: ignore[assignment]
 
@@ -821,14 +849,7 @@ class ManipulationModule(Module):
         self,
     ) -> tuple[np.ndarray | None, Detection3DArray | None, Detection2DArray | None, Pose | None]:  # type: ignore[type-arg]
         """Capture frame from camera data and process detections."""
-        if self.latest_rgb is None or self.detector is None:
-            return None, None, None, None
-
-        # For SO101 (RGB-only camera), create a fake depth image with z=0.1
-        if self.arm_type == "so101" and self.latest_depth is None:
-            height, width = self.latest_rgb.shape[:2]
-            self.latest_depth = np.full((height, width), 0.1, dtype=np.float32)
-        elif self.latest_depth is None:
+        if self.latest_rgb is None or self.latest_depth is None or self.detector is None:
             return None, None, None, None
 
         ee_pose = self.arm.get_ee_pose()
@@ -855,26 +876,6 @@ class ManipulationModule(Module):
             if not self.check_within_workspace(clicked_3d.bbox.center):
                 self.task_failed = True
                 return False
-            # Sanjay DEBUG
-            if clicked_3d:
-                # Update z position before building info
-                if clicked_3d.bbox and clicked_3d.bbox.center:
-                    clicked_3d.bbox.center.position.z = 0.025
-                    clicked_3d.bbox.center.position.x = 0.3
-                    clicked_3d.bbox.center.position.y = 0.0
-                    clicked_3d.bbox.size.z = 0.05
-                
-                info_parts = [f"ID={clicked_3d.id}"]
-                if clicked_3d.bbox and clicked_3d.bbox.center:
-                    pos = clicked_3d.bbox.center.position
-                    info_parts.append(f"pos=({pos.x:.3f}, {pos.y:.3f}, {pos.z:.3f})")
-                if clicked_3d.bbox and clicked_3d.bbox.size:
-                    size = clicked_3d.bbox.size
-                    info_parts.append(f"size=({size.x:.3f}, {size.y:.3f}, {size.z:.3f})")
-                if clicked_3d.results_length > 0 and clicked_3d.results:
-                    result = clicked_3d.results[0]
-                    info_parts.append(f"class={result.hypothesis.class_id}, score={result.hypothesis.score:.3f}")
-                print(f"clicked 3d: {', '.join(info_parts)}")
 
             self.pbvs.set_target(clicked_3d)
 

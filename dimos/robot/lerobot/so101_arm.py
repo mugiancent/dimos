@@ -65,16 +65,17 @@ class SO101ArmRobot(Robot):
         self.camera = self.dimos.deploy(
             RealSenseModule,
             serial_number="215322078948",
-            width=1280,
-            height=720,
+            width=640,
+            height=480,
             fps=30,
             enable_color=True,
-            enable_depth=False,  # Only need color for display
-            align_depth_to_color=False,
+            enable_depth=True,
+            align_depth_to_color=True,
         )
 
         # Configure camera LCM
         self.camera.color_image.transport = core.LCMTransport("/camera/rgb", Image)
+        self.camera.depth_image.transport = core.LCMTransport("/camera/depth", Image)
         self.camera.camera_info.transport = core.LCMTransport("/camera/info", CameraInfo)
 
         # Deploy manipulation module
@@ -82,14 +83,6 @@ class SO101ArmRobot(Robot):
         self.manipulation_interface = self.dimos.deploy(
             ManipulationModule,
             arm="so101",
-            ee_to_camera_6dof=[
-                0.02535444,
-                0.05690531,
-                0.01182119,
-                -2.8845617934963883,
-                -0.028059600646724192,
-                0.035302457201630055,
-            ],
         )
 
         # Connect modules
