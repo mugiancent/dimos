@@ -20,6 +20,7 @@ import dataclasses
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 import os
+import pickle
 from pathlib import Path
 import threading
 import time
@@ -137,66 +138,14 @@ def start_dashboard_server_thread(
 ) -> tuple[HTTPServer, threading.Thread]:
     """Spin up a tiny HTTP server that hosts a web viewer pointing at rerun_url."""
 
-    html = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Dask Actor Dashboard</title>
-  <style>
-    :root {{ color-scheme: dark; }}
-    body {{
-      margin: 0;
-      background: #0d1011;
-      color: #f0f4f8;
-      font-family: "Inter", "SF Pro Display", "Segoe UI", sans-serif;
-      display: flex;
-      align-items: stretch;
-      min-height: 100vh;
-    }}
-    #viewer {{
-      flex: 1;
-      min-height: 100vh;
-    }}
-    header {{
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      padding: 0.75rem 1rem;
-      background: linear-gradient(90deg, #0d1011 0%, #1b2024 100%);
-      border-bottom: 1px solid rgba(255,255,255,0.08);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      z-index: 2;
-    }}
-    header .pill {{
-      padding: 0.25rem 0.6rem;
-      border-radius: 999px;
-      background: rgba(255,255,255,0.08);
-      font-size: 0.9rem;
-      letter-spacing: 0.01em;
-    }}
-    main {{
-      flex: 1;
-      margin-top: 3.5rem;
-    }}
-  </style>
-</head>
-<body>
-  <header>
-    <div>Rerun Stream</div>
-    <div class="pill">{rerun_url}</div>
-  </header>
-  <main id="viewer"></main>
-  <script type="module">
-    import {{ WebViewer }} from "https://esm.sh/@rerun-io/web-viewer@0.27.2";
-    const viewer = new WebViewer();
-    viewer.start("{rerun_url}", document.getElementById("viewer"));
-  </script>
-</body>
-</html>"""
+    html = f"""<body>
+        <style>body {{ margin: 0; border: 0; }}\ncanvas {{ width: 100vw !important; height: 100vh !important; }}</style>
+        <script type="module">
+            import {{ WebViewer }} from "https://esm.sh/@rerun-io/web-viewer@0.27.2";
+            const viewer = new WebViewer();
+            viewer.start("{rerun_url}", document.body);
+        </script>
+    </body>"""
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
@@ -226,28 +175,9 @@ def start_dashboard_server_thread(
 
 # ------------------------- Data replay as an actor ------------------------- #
 DEFAULT_REPLAY_PATHS: dict[str, str] = {
-    "lidar": "./dimos/dashboard/support/lidar.yaml",
-    "color_image": "./dimos/dashboard/support/color_image.yaml",
+    name: str(Path(__file__).with_name(f"example_data_{name}.yaml"))
+    for name in ("lidar", "color_image")
 }
-# Fallback demo data if the real YAML files are missing.
-DEFAULT_REPLAY_PATH = Path(__file__).with_name("sample_replay.yaml")
-DEFAULT_YAML = """\
-- kind: text
-  path: /logs
-  payload: "Hello from the Dask actor!"
-- kind: points3d
-  path: /points
-  positions:
-    - [0.0, 0.0, 0.0]
-    - [1.0, 0.0, 0.0]
-    - [1.0, 1.0, 0.0]
-"""
-
-
-def ensure_default_yaml() -> None:
-    if DEFAULT_REPLAY_PATH.exists():
-        return
-    DEFAULT_REPLAY_PATH.write_text(DEFAULT_YAML, encoding="utf-8")
 
 
 class DataReplayActor:
@@ -271,23 +201,21 @@ class DataReplayActor:
     def _iter_messages(self, path: str):
         file_path = Path(path)
         if not file_path.exists():
-            print(f"[DataReplayActor] file {path} does not exist, using fallback demo data")
-            yield from yaml.safe_load(DEFAULT_YAML)
-            return
+            raise FileNotFoundError(f"[DataReplayActor] missing replay file: {file_path}")
 
         with file_path.open("r", encoding="utf-8") as f:
-            for line_number, line in enumerate(f):
-                if not line.strip():
+            for doc in yaml.safe_load_all(f):
+                if doc is None:
                     continue
-                try:
-                    parsed = yaml.unsafe_load(line) or []
-                except Exception as error:
-                    print(f"[DataReplayActor] line {line_number} could not be parsed: {error}")
-                    continue
-                if isinstance(parsed, list):
-                    yield from parsed
-                else:
-                    yield parsed
+                items = doc if isinstance(doc, list) else [doc]
+                for item in items:
+                    if isinstance(item, (bytes, bytearray)):
+                        try:
+                            yield pickle.loads(item)
+                        except Exception as error:
+                            print(f"[DataReplayActor] failed to unpickle entry: {error}")
+                    else:
+                        yield item
 
     def _to_rerun_payload(self, msg: Any, output_name: str) -> tuple[str, Any]:
         path = f"/{output_name}"
@@ -313,7 +241,10 @@ class DataReplayActor:
                 if self._stop_event.is_set():
                     break
                 try:
-                    log_path, payload = self._to_rerun_payload(msg, output_name)
+                    if isinstance(msg, tuple) and len(msg) == 2:
+                        log_path, payload = msg
+                    else:
+                        log_path, payload = self._to_rerun_payload(msg, output_name)
                     rc.log(log_path, payload, strict=True)
                     any_sent = True
                     time.sleep(self.interval_sec)
@@ -349,7 +280,6 @@ class DataReplayActor:
 
 # ------------------------------ Entrypoint --------------------------------- #
 def main() -> None:
-    ensure_default_yaml()
     rerun_info = RerunInfo()
 
     client = Client(
