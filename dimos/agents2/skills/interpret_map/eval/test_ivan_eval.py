@@ -26,6 +26,7 @@ from dimos_lcm.foxglove_msgs.ImageAnnotations import ImageAnnotations
 import numpy as np
 import pytest
 
+from dimos.agents2.skills.interpret_map import OccupancyGridImage
 from dimos.core import LCMTransport
 from dimos.models.vl.base import VlModel
 from dimos.models.vl.moondream import MoondreamVlModel
@@ -38,17 +39,118 @@ from dimos.protocol.tf import TF
 from dimos.utils.data import get_data
 from dimos.utils.generic import extract_json_from_llm_response
 
+TEST_DIR = Path(__file__).parent
 
-def goal_placement_prompt(description: str) -> str:
-    prompt = (
-        "Look at this image carefully \n"
-        "it represents a 2D map map perceived by a robot looked from above (like a floor plan).\n"
-        " - red circle is the robot, UP in the image is always FORWARD for the robot.\n"
-        " - white color represents free space, black color are walls or obstacles\n"
-        f"Identify a location in free space based on the following description:\n{description}\n"
-    )
 
-    return prompt
+def load_test_cases(filepath: str):
+    import yaml
+
+    print(f"Loading test cases from {filepath}")
+    with open(filepath) as f:
+        data = yaml.safe_load(f)
+    return data
+
+
+@dataclass
+class SetupOccupancyGrid:
+    """
+    Helper class to generate OccupancyGrid from image, and produce corresponding OccupancyGridImage object.
+    """
+
+    image_path: str
+    robot_pose: dict
+    occupancy_grid_image: OccupancyGridImage | None = None
+    resolution: float = 0.05
+    image: Image | None = None
+    detections: ImageDetections2D | None = None
+    model: VlModel | Callable[[], VlModel] = QwenVlModel
+
+    def __post_init__(self):
+        if callable(self.model):
+            self.model = self.model()
+        self.image = self.get_image()
+
+    @cached_property
+    def transforms(self) -> Transform:
+        return [
+            Transform(
+                frame_id="world",
+                child_frame_id="base_link",
+                translation=Vector3([i * self.resolution for i in self.robot_pose["position"]]),
+                rotation=Quaternion(*self.robot_pose["orientation"]),
+            )
+        ]
+
+    @cached_property
+    def pose_stamped(self) -> PoseStamped:
+        return PoseStamped(
+            frame_id="base_link",
+            position=[i * self.resolution for i in self.robot_pose["position"]],
+            orientation=self.robot_pose["orientation"],
+        )
+
+    def query_multi(self, query: str) -> PoseStamped:
+        image = self.get_image()
+        self.detections = self.model.query_multi_points(image, query)
+        return self.detections
+
+    def get_image(self):
+        robot_pose = self.pose_stamped
+
+        og_image = OccupancyGridImage.from_occupancygrid(
+            self.costmap, flip_vertical=False, robot_pose=robot_pose
+        )
+        self.occupancy_grid_image = og_image
+        self.image = og_image.image
+        return og_image.image
+
+    @property
+    def costmap(self) -> OccupancyGrid:
+        """
+        Build OccupancyGrid from map image`.
+        """
+        # load image
+        image_path = get_data("maps") / self.image_path
+        image = Image.from_file(str(image_path))
+
+        # read image and convert to grid 1:1
+        # expects rgb image with black as obstacles, white as free space and gray as unknown
+        image_arr = image.to_rgb().data
+        height, width = image_arr.shape[:2]
+        grid = np.full((height, width), 100, dtype=np.int8)  # obstacle by default
+
+        # drop alpha channel if present
+        if image_arr.shape[2] == 4:
+            image_arr = image_arr[:, :, :3]
+
+        # define colors and threshold
+        WHITE = np.array([255, 255, 255], dtype=np.float32)
+        GRAY = np.array([127, 127, 127], dtype=np.float32)  # approx RGB for 127 gray
+        white_threshold = 30
+        gray_threshold = 10
+
+        # convert to float32 for distance calculations
+        image_float = image_arr.astype(np.float32)
+
+        # calculate distances to target colors using broadcasting
+        white_dist = np.sqrt(np.sum((image_float - WHITE) ** 2, axis=2))
+        gray_dist = np.sqrt(np.sum((image_float - GRAY) ** 2, axis=2))
+
+        # assign based on closest color within threshold
+        grid[white_dist <= white_threshold] = 0  # Free space
+        grid[gray_dist <= gray_threshold] = -1  # Unknown space
+
+        # build OccupancyGrid object
+        occupancy_grid = OccupancyGrid()
+        occupancy_grid.info.width = width
+        occupancy_grid.info.height = height
+        occupancy_grid.info.resolution = 0.05
+        occupancy_grid.grid = grid
+        occupancy_grid.frame_id = "world"
+        occupancy_grid.info.origin.position = Vector3(0.0, 0.0, 0.0)
+        occupancy_grid.info.origin.orientation = Quaternion(0.0, 0.0, 0.0, 1.0)
+
+        return occupancy_grid
 
 
 @dataclass
@@ -123,11 +225,6 @@ class State:
         return occupancy_grid
 
 
-@pytest.fixture
-def vl_model():
-    return QwenVlModel()
-
-
 @pytest.fixture(scope="session")
 def publish_state():
     def publish(state: State):
@@ -136,10 +233,10 @@ def publish_state():
             tf.publish(*state.transforms)
             tf.stop()
 
-        if state.target:
-            pose: LCMTransport[PoseStamped] = LCMTransport("/target", PoseStamped)
-            pose.publish(target)
-            pose.lcm.stop()
+        # if state.target:
+        #     pose: LCMTransport[PoseStamped] = LCMTransport("/target", PoseStamped)
+        #     pose.publish(target)
+        #     pose.lcm.stop()
 
         if state.costmap:
             costmap: LCMTransport[OccupancyGrid] = LCMTransport("/costmap", OccupancyGrid)
@@ -161,14 +258,54 @@ def publish_state():
     yield publish
 
 
+def goal_placement_prompt(description: str, robot_pixel_coord: tuple[int, int]) -> str:
+    prompt = (
+        "Look at this image carefully \n"
+        "it represents a 2D map percieved from above (like a floor plan).\n"
+        " - white pixels represent free space, \n"
+        " - gray pixels represent unexplored space, \n"
+        " - black pixels are obstacles and walls, \n"
+        " - green circle represents the robot.\n"
+        " - Note: The image may contain some noise or artifacts, ignore them and focus on clear structural patterns.\n"
+        "The image has been rotated so that the robot always faces straight upwards.\n"
+        "- The robot's front is towards the of the image.\n"
+        "- The robot's back is towards the bottom.\n"
+        "- The robot's left is towards the left.\n"
+        "- The robot's right is towards the right.\n"
+        f"Identify a location in free space based on the following description: {description}\n"
+        f"Metadata - pixel coordinates of robot (x, y): {robot_pixel_coord}\n"
+        "Guildelines for identified location: \n"
+        " - the point should be reacheable by the robot following a reasonable path through free space, it should not be surrounded by walls on all sides.\n"
+        " - NEVER place the point on thick walls, obstacles or unexplored space.\n"
+        " - maintain clearance of few pixels and find the nearest clear location that still matches the general direction and description.\n"
+    )
+
+    return prompt
+
+
 def test_basic_image(publish_state, vl_model):
     state = State.from_image("ivan1.png")
     state.query("open area")
     publish_state(state)
-    # target = target_from_llm(
-    #     vl_model,
-    #     grid_generator,
-    #     "hallway in front of the robot",
-    # )
 
-    # publish_state(grid_generator)
+
+@pytest.mark.parametrize(
+    "test_map",
+    [
+        test_map
+        for test_map in load_test_cases(TEST_DIR / "test_map_interpretability.yaml")[
+            "point_placement_tests"
+        ]
+    ],
+)
+def test_point_placement(test_map, publish_state):
+    # setup
+    state = SetupOccupancyGrid(image_path=test_map["image_path"], robot_pose=test_map["robot_pose"])
+    robot_pixel_coord = state.occupancy_grid_image.robot_pixel_coord
+
+    queries = [
+        goal_placement_prompt(qna["query"], robot_pixel_coord) for qna in test_map["questions"]
+    ]
+
+    state.query_multi(queries)
+    publish_state(state)

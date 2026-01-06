@@ -342,3 +342,31 @@ class VlModel(Captioner, Resource, Configurable[VlModelConfig]):
                 image_detections.detections.append(point2d)
 
         return image_detections
+
+    def query_multi_points(
+        self, image: Image, queries: list[str], **kwargs: object
+    ) -> ImageDetections2D[Detection2DPoint]:
+        """Query the VLM for point locations matching multiple queries.
+
+        Args:
+            image: Input image to query
+            queries: List of descriptions of what points to find (e.g., ["center of the red ball", "top of the blue box"])
+
+        Returns:
+            ImageDetections2D containing Detection2DPoint instances from all queries combined
+        """
+        image_detections: ImageDetections2D[Detection2DPoint] = ImageDetections2D(image)
+        
+        track_id = 0
+        for query in queries:
+            # Query each point individually using the same logic as query_points
+            query_result = self.query_points(image, query, **kwargs)
+            
+            # Add all detections from this query to the combined result
+            # Update track_ids to be sequential across all queries
+            for detection in query_result.detections:
+                detection.track_id = track_id
+                image_detections.detections.append(detection)
+                track_id += 1
+        
+        return image_detections
