@@ -79,7 +79,8 @@ dependencies = [
     "llvmlite>=0.42.0", # Required by numba 0.60+
 
     # VLA
-    "openpi-client"
+    "openpi-client",
+    "xArm-python-sdk"
 ]
 
 
