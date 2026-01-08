@@ -12,32 +12,64 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import sys
+import os
+import threading
 import time
 
 import numpy as np
 from openpi_client import websocket_client_policy
 from xarm.wrapper import XArmAPI
 
+from dimos.core.transport import LCMTransport
+from dimos.msgs.sensor_msgs import Image
+from dimos.msgs.sensor_msgs.image_impls.AbstractImage import ImageFormat
+
+
 ACTION_HORIZON = 15
+
+
+def get_camera_image(timeout: float = 5.0, topic: str = "/camera/color") -> np.ndarray:
+    event = threading.Event()
+    image_data: dict[str, np.ndarray] = {}
+
+    def on_img(msg: Image) -> None:
+        if event.is_set():
+            return
+        image_data["image"] = msg.to_rgb().to_opencv()
+        os.makedirs("captures", exist_ok=True)
+        filename = f"camera_color_{time.time()}.png"
+        Image.from_numpy(image_data["image"], format=ImageFormat.RGB).save(
+            os.path.join("captures", filename)
+        )
+        event.set()
+
+    transport = LCMTransport(topic, Image)
+    transport.subscribe(on_img)
+
+    if not event.wait(timeout=timeout):
+        raise TimeoutError(f"No image received on {topic} within {timeout} seconds.")
+
+    return image_data["image"]
+
 
 
 def franka_to_xarm(franka_joint_positions):
     offsets = np.array([0, 0, 0, 180, 0, 180, 0])
     return offsets - franka_joint_positions
 
+def xarm_to_franka(xarm_joint_positions):
+    offsets = np.array([0, 0, 0, 180, 0, 180, 0])
+    return offsets + xarm_joint_positions
+
 
 def get_observation():
     return {
-        "observation/exterior_image_1_left": np.random.randint(
-            256, size=(224, 224, 3), dtype=np.uint8
-        ),
-        "observation/wrist_image_left": np.random.randint(256, size=(224, 224, 3), dtype=np.uint8),
-        "observation/joint_position": arm.get_servo_angle()[1],  # Your xArm joint positions
-        "observation/gripper_position": arm.get_gripper_position(),  # Your gripper position
-        "prompt": "move the arm slightly to the left",  # Your task description
+        "observation/exterior_image_1_left": get_camera_image(),
+        "observation/wrist_image_left": get_camera_image(),
+        "observation/joint_position": xarm_to_franka(arm.get_servo_angle()[1]),
+        "observation/gripper_position": 0.0,
+        "prompt": "move the arm slightly to the left",
     }
-
 
 def run_inference():
     """
@@ -84,20 +116,11 @@ if __name__ == "__main__":
     arm.move_gohome(wait=True)
     print(f"arm.get_servo_angle(): {arm.get_servo_angle()}")
 
-    # Create a DROID-format observation (DUMMY OBSERVATION)
-    observation = {
-        "observation/exterior_image_1_left": np.random.randint(
-            256, size=(224, 224, 3), dtype=np.uint8
-        ),
-        "observation/wrist_image_left": np.random.randint(256, size=(224, 224, 3), dtype=np.uint8),
-        "observation/joint_position": np.random.rand(7),  # Your xArm joint positions
-        "observation/gripper_position": np.random.rand(1),  # Your gripper position
-        "prompt": "move the arm slightly to the left",  # Your task description
-    }
+    observation = get_observation()
 
     result = policy.infer(observation)
     action_chunk = result["actions"]  # Shape: (15, 8) - these are VELOCITY COMMANDS
-    print(action_chunk[2])
+    print(action_chunk[0])
 
     dt = 1.0 / 15.0
     action_chunk = action_chunk.copy()
