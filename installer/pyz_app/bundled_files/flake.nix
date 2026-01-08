@@ -34,6 +34,12 @@
         # ------------------------------------------------------------
         shellHook = ''
           ${dimos.shellHook}
+          
+          # hide the messy nix shell prompt
+          if [ "$SHELL" = "bash" ]; then
+              export PS1="DimOS dev-shell
+> "
+          fi
 
           PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD")
           cd "$PROJECT_ROOT"
@@ -75,9 +81,22 @@
                 pip install uv
             fi
             # if dimos not available. install it
-            python3 -c "try: import dimos
-except: exit(1)" 2>/dev/null || pip install 'dimos @ git+ssh://git@github.com/dimensionalOS/dimos.git'
-
+            if ! python3 -c "try: import dimos
+except: exit(1)" 2>/dev/null; then
+              if [ "''${DIMOS_ENABLED_FEATURES+dimos_features_are_defined}" = dimos_features_are_defined ]; then
+                # no features
+                if [ -z "$DIMOS_ENABLED_FEATURES" ]; then
+                  # FIXME: change before launch
+                  pip install 'dimos @ git+ssh://git@github.com/dimensionalOS/dimos.git'
+                else
+                  # FIXME: change before launch
+                  pip install 'dimos['"$DIMOS_ENABLED_FEATURES"'] @ git+ssh://git@github.com/dimensionalOS/dimos.git'
+                fi
+              else
+                echo 
+                echo "Don't forget to run: pip install dimos"
+              fi
+            fi
           fi
         '';
 
@@ -91,6 +110,7 @@ except: exit(1)" 2>/dev/null || pip install 'dimos @ git+ssh://git@github.com/di
           isolated = (xome.simpleMakeHomeFor {
             inherit pkgs;
             pure = true;
+            envPassthrough = [ "DIMOS_ENABLED_FEATURES" "NIX_SSL_CERT_FILE" "TERM" "XOME_REAL_HOME" "XOME_REAL_PATH" "XOME_FAKE_HOME" "XOME_REAL_USER" ];
             commandPassthrough = [ "sudo" "nvim" "code" "sysctl" "sw_vers" "git" "vim" "emacs" "openssl" "ssh" "osascript" "otool" "hidutil" "logger" "codesign" ]; # e.g. use external nvim instead of nix's
             # commonly needed for MacOS: [ "osascript" "otool" "hidutil" "logger" "codesign" ]
             homeSubpathPassthrough = [ "cache/nix/" ]; # share nix cache between projects

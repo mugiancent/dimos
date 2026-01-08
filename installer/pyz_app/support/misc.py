@@ -298,7 +298,7 @@ def init_repo_with_gitignore(repo_dir: str | Path) -> None:
     git_ignore = Path(repo_dir / ".gitignore")
     if not git_ignore.exists():
         p.boring_log("- git ignore file not found, creating")
-        git_ignore.write_text("", encoding="utf-8")
+        git_ignore.write_text(DEFAULT_GITIGNORE_CONTENT, encoding="utf-8")
     else:
         p.boring_log("- git ignore file found")
 

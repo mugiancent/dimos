@@ -123,6 +123,7 @@ def phase0(cli_features: list[str] | None = None) -> tuple[dict[str, object], li
     #
     env_path = f"{project_dir}/.env"
     envrc_path = f"{project_dir}/.envrc"
+    envrc_path_obj = Path(envrc_path)
     has_dotenv = setup_dotenv(project_dir, env_path)
     if not has_dotenv:
         return
@@ -136,7 +137,6 @@ def phase0(cli_features: list[str] | None = None) -> tuple[dict[str, object], li
         "system": "Typical system install",
         "docker": "Docker container setup",
         "nix": "Nix flake",
-        # "nix_venv": "Fast venv setup (nix shell)",
     }
     os_info = system_analysis.get("os", {})
     native_install_supported = (
@@ -240,7 +240,7 @@ def phase0(cli_features: list[str] | None = None) -> tuple[dict[str, object], li
                 print("Should I install it for you? (y/n)")
                 nix_install(["git"])  # this will install nix if needed
             
-            git_commit_instruction = "\n- git commit the {p.highlight('flake.nix')}"
+            git_commit_instruction = f"\n- git commit the {p.highlight('flake.nix')}"
             if not Path(project_dir / ".git").exists():
                 if p.ask_yes_no(
                     "Your project doesn't seem to have a (direct) git repo.\nFlakes require a git repo.\nShould I initialize a new git repo for this flake?"
@@ -258,15 +258,31 @@ def phase0(cli_features: list[str] | None = None) -> tuple[dict[str, object], li
                     )
 
             ensure_flakes_enabled()
+            
             install_command = f"pip install dimos{feat_str}"
-            print(
-                f"Once you are ready:{git_commit_instruction}\n- run {p.highlight('nix develop')}\n- then run {p.highlight(install_command)}"
-            )
+            # FIXME: change before release
             dev_command = (
                 f"pip install 'dimos{feat_str} @ git+ssh://git@github.com/dimensionalOS/dimos.git'"
             )
-            # FIXME: change before release
-            p.warning(f"because you're on dev run: {p.highlight(dev_command)}")
+            if command_exists("direnv") and envrc_path_obj.exists() and p.ask_yes_no("Would you like to add nix to your .envrc (assuming you use direnv)? (highly recommended!)"):
+                existing_text = envrc_path_obj.read_text()
+                # prepend the nix direnv setup
+                envrc_path_obj.write_text(
+                    "\n# added by dimos setup\n"+
+                    "if ! has nix_direnv_version || ! nix_direnv_version 3.0.6; then\n"+
+                    '    source_url "https://raw.githubusercontent.com/nix-community/nix-direnv/3.0.6/direnvrc" "sha256-RYcUJaRMf8oF5LznDrlCXbkOQrywm0HDv1VjYGaJGdM="\n'+
+                    "fi\n"+
+                    "use flake .\n"+existing_text
+                )
+                print(f"Run {p.highlight(install_command)} after you run (and wait for) direnv allow to finish")
+                p.warning(f"because you're on dev run: {p.highlight(dev_command)}")
+                print("After that, DimOS should be ready to use")
+            else:
+                dev_shell_command = p.highlight('nix develop \'#.isolated\'')
+                print(
+                    f"Once you are ready:{git_commit_instruction}\n- run {dev_shell_command}\n- then run {p.highlight(install_command)}"
+                )
+                p.warning(f"because you're on dev run: {p.highlight(dev_command)}")
 
             raise SystemExit(0)
 
