@@ -188,11 +188,13 @@ def phase0(cli_features: list[str] | None = None) -> tuple[dict[str, object], li
             print(
                 f"Use {p.highlight('run/docker_build')} to build the image, and {p.highlight('run/docker_exec')} to start a shell in the container."
             )
+            print()
+            print()
             # build command
             while True:
                 try:
                     response = input(
-                        f"Please type {p.highlight('run/docker_build')} to build the image right now\npress CTRL+C to if you want to run that command yourself (e.g. later)"
+                        f"Please type {p.highlight('run/docker_build')} to build the image right now\npress CTRL+C to if you want to run that command yourself (e.g. later)\n> "
                     )
                 except KeyboardInterrupt:
                     print(
@@ -202,11 +204,13 @@ def phase0(cli_features: list[str] | None = None) -> tuple[dict[str, object], li
                 if response.strip() == "run/docker_build":
                     run_command([str(paths["build_script"])], check=False)
                     break
+            print()
+            print()
             # run command
             while True:
                 try:
                     response = input(
-                        f"Please type {p.highlight('run/docker_exec')} to run the image right now\npress CTRL+C to if you want to run that command later"
+                        f"Now please type {p.highlight('run/docker_exec')} to run the image right now\npress CTRL+C to if you want to run that command later\n> "
                     )
                 except KeyboardInterrupt:
                     print(
@@ -224,6 +228,9 @@ def phase0(cli_features: list[str] | None = None) -> tuple[dict[str, object], li
                 print("Note: feel free to edit your Dockerfile as you see fit")
                 raise SystemExit(0)
             else:
+                print()
+                print()
+                print()
                 p.warning(
                     f"It looks like the docker run wasn't able to completely setup dimos\nNote, every time you run {p.highlight('run/docker_exec')} it will attempt to install dimos.\nSo, if you fix the issue, try running {p.highlight('run/docker_exec')} again\n\nIn the meantime, please don't hesitate to reach out to us on discord:\n    {DISCORD_URL}"
                 )
