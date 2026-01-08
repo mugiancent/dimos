@@ -37,7 +37,6 @@ Example:
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -49,6 +48,7 @@ from dimos.manipulation.planning.utils.kinematics_utils import (
     compute_pose_error,
     damped_pseudoinverse,
 )
+from dimos.utils.logging_config import setup_logger
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
@@ -62,7 +62,7 @@ try:
 except ImportError:
     DRAKE_AVAILABLE = False
 
-logger = logging.getLogger(__name__)
+logger = setup_logger()
 
 
 class DrakeKinematics:

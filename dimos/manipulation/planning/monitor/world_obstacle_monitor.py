@@ -26,7 +26,6 @@ Example:
 
 from __future__ import annotations
 
-import logging
 import time
 from typing import TYPE_CHECKING
 
@@ -36,6 +35,7 @@ from dimos.manipulation.planning.spec import (
     Obstacle,
     ObstacleType,
 )
+from dimos.utils.logging_config import setup_logger
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -46,7 +46,7 @@ if TYPE_CHECKING:
 
     from dimos.manipulation.planning.spec import WorldSpec
 
-logger = logging.getLogger(__name__)
+logger = setup_logger()
 
 
 class WorldObstacleMonitor:

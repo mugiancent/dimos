@@ -33,7 +33,6 @@ Example:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-import logging
 import time
 from typing import TYPE_CHECKING
 
@@ -45,11 +44,12 @@ from dimos.manipulation.planning.utils.path_utils import (
     interpolate_path,
     interpolate_segment,
 )
+from dimos.utils.logging_config import setup_logger
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
 
-logger = logging.getLogger(__name__)
+logger = setup_logger()
 
 
 @dataclass

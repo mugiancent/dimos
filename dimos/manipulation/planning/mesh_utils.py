@@ -32,7 +32,6 @@ Example:
 from __future__ import annotations
 
 import hashlib
-import logging
 import os
 from pathlib import Path
 import re
@@ -40,7 +39,9 @@ import shutil
 import tempfile
 from typing import TYPE_CHECKING
 
-logger = logging.getLogger(__name__)
+from dimos.utils.logging_config import setup_logger
+
+logger = setup_logger()
 
 # Cache directory for processed URDFs
 _CACHE_DIR = Path(tempfile.gettempdir()) / "dimos_urdf_cache"

@@ -53,7 +53,6 @@ from __future__ import annotations
 from contextlib import contextmanager
 import copy
 from dataclasses import dataclass
-import logging
 from pathlib import Path
 from threading import RLock
 from typing import TYPE_CHECKING, Any
@@ -66,6 +65,7 @@ from dimos.manipulation.planning.spec import (
     ObstacleType,
     RobotModelConfig,
 )
+from dimos.utils.logging_config import setup_logger
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -105,7 +105,7 @@ try:
 except ImportError:
     DRAKE_AVAILABLE = False
 
-logger = logging.getLogger(__name__)
+logger = setup_logger()
 
 
 @dataclass

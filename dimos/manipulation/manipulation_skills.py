@@ -40,17 +40,17 @@ cluster.link(skills.rpc >> agent.register_skills)
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING
 
 from dimos.core.core import rpc
 from dimos.core.skill_module import SkillModule
 from dimos.protocol.skill.skill import skill
+from dimos.utils.logging_config import setup_logger
 
 if TYPE_CHECKING:
     from dimos.core.rpc_client import RpcCall
 
-logger = logging.getLogger(__name__)
+logger = setup_logger()
 
 
 class ManipulationSkillContainer(SkillModule):
