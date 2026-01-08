@@ -43,7 +43,6 @@ from dimos.utils.logging_config import setup_logger
 if TYPE_CHECKING:
     from pathlib import Path
 
-    pass
 
 logger = setup_logger()
 
