@@ -417,16 +417,18 @@ def maybe_write(path: Path, content: str) -> bool:
 def init_repo_with_gitignore(repo_dir: str | Path) -> None:
     repo_dir = Path(repo_dir)
     repo_dir.mkdir(parents=True, exist_ok=True)
-
+    p.boring_log("- running git init")
     run_command(["git", "init"], print_command=True)
     git_ignore = Path(repo_dir / ".gitignore")
     if not git_ignore.exists():
+        p.boring_log("- git ignore file not found, creating")
         git_ignore.write_text("", encoding="utf-8")
+    else:
+        p.boring_log("- git ignore file found")
+    
     add_git_ignore_patterns(git_ignore, DEFAULT_GITIGNORE_CONTENT.split("\n"))
     run_command(["git", "add", ".gitignore"], print_command=True)
     run_command(["git", "commit", "-m", "gitignore"], print_command=True)
-    run_command(["git", "add", "-A"], print_command=True)
-    run_command(["git", "commit", "-m", "init"], print_command=True)
 
 
 def in_git_repo() -> bool:

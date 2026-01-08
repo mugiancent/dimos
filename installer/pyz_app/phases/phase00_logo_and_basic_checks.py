@@ -166,18 +166,25 @@ def phase0():
                     "Your project doesn't seem to have a (direct) git repo.\nFlakes require a git repo.\nShould I initialize a new git repo for this flake you? (y/n)"
                 ):
                     init_repo_with_gitignore(project_dir)
+                    run_command(["git", "add", "flake.nix"], print_command=True)
+                    run_command(["git", "commit", "-m", "add flake.nix"], print_command=True)
+                    print()
+                    print()
                 else:
+                    # if we are to automate this, we must account for there being already-staged changes
                     print(
                         "Okay, but make sure to commit the flake.nix changes otherwise you won't be able to run `nix develop`"
                     )
 
             ensure_flakes_enabled()
+            install_command = f"pip install dimos{feat_str}"
             print(
-                f"Once ready, git commit the flake.nix, run `nix develop`, then run `pip install dimos{feat_str}`"
+                f"Once ready, git commit the {p.highlight('flake.nix')}, run {p.highlight("nix develop")}, then run {p.highlight(install_command)}"
             )
-            # FIXME: dev
+            dev_command = f"pip install 'dimos{feat_str} @ git+ssh://git@github.com/dimensionalOS/dimos.git'"
+            # FIXME: change before release
             print(
-                f"because you're on dev run: pip install 'dimos{feat_str} @ git+ssh://git@github.com/dimensionalOS/dimos.git'"
+                f"because you're on dev run: {p.highlight(dev_command)}"
             )
 
             # TODO: ask if they would like us to setup .envrc for them
