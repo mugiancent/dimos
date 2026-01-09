@@ -242,8 +242,10 @@ def phase0(cli_features: list[str] | None = None) -> tuple[dict[str, object], li
             feat_str = "[" + (",".join(selected_features)) + "]" if selected_features else ""
             if not command_exists("git"):
                 print("You need to install git for the flake.nix to work")
-                print("Should I install it for you? (y/n)")
-                nix_install(["git"])  # this will install nix if needed
+                if p.ask_yes_no("Should I install git for you? (y/n)"):
+                    nix_install(["git"])  # this will install nix if needed
+                else:
+                    print(f"\nOkay. Well git is necessary for the nix flake setup. Please run the installer again once you have git installed or are okay with the installer adding it for you")
 
             git_commit_instruction = f"\n- git commit the {p.highlight('flake.nix')}"
             if not Path(project_dir / ".git").exists():
