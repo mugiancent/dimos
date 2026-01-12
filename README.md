@@ -99,10 +99,13 @@ pip install torch==2.0.1 torchvision torchaudio --index-url https://download.pyt
 #### Install dependencies
 ```bash
 # CPU only (reccomended to attempt first)
-pip install -e '.[cpu,dev]'
+uv sync --extra cpu --extra dev
 
 # CUDA install
-pip install -e '.[cuda,dev]'
+uv sync --extra cuda --extra dev
+
+# Jetson Jetpack 6.2 (Python 3.10 only)
+uv sync --extra jetson-jp6-cuda126 --extra dev
 
 # Copy and configure environment variables
 cp default.env .env
