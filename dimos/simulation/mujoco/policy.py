@@ -16,15 +16,14 @@
 
 
 from abc import ABC, abstractmethod
+import time
 from typing import Any
 
-import time
 import mujoco
 import numpy as np
 import onnxruntime as rt  # type: ignore[import-untyped]
 
 from dimos.simulation.mujoco.input_controller import InputController
-
 
 _MUJOCO_PROFILER_ENABLED = False
 _MUJOCO_PROF: dict[str, float | int] = {
@@ -367,7 +366,8 @@ class MjlabVelocityOnnxController(OnnxController):
             # Apply control in MuJoCo actuator order.
             idx = self._ctrl_policy_idx
             targets = (
-                self._default_joint_pos_policy[idx] + onnx_pred[idx] * self._action_scale_policy[idx]
+                self._default_joint_pos_policy[idx]
+                + onnx_pred[idx] * self._action_scale_policy[idx]
             )
             data.ctrl[:] = targets
             t1 = time.perf_counter()
@@ -392,6 +392,7 @@ class MjlabVelocityOnnxController(OnnxController):
             # Apply control in MuJoCo actuator order.
             idx = self._ctrl_policy_idx
             targets = (
-                self._default_joint_pos_policy[idx] + onnx_pred[idx] * self._action_scale_policy[idx]
+                self._default_joint_pos_policy[idx]
+                + onnx_pred[idx] * self._action_scale_policy[idx]
             )
             data.ctrl[:] = targets

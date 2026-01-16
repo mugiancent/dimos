@@ -191,7 +191,7 @@ def _run_simulation(config: GlobalConfig, shm: ShmReader) -> None:
 
         while m_viewer.is_running() and not shm.should_stop():
             step_start = time.time()
-            t_frame0 = time.perf_counter()
+            time.perf_counter()
 
             # Step simulation
             t0 = time.perf_counter()
