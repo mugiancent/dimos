@@ -36,17 +36,10 @@ except ImportError:
     SingleThreadedExecutor = None  # type: ignore[assignment, misc]
     Node = None  # type: ignore[assignment, misc]
 
-from dimos.protocol.pubsub.spec import MsgT, PubSub, PubSubEncoderMixin, TopicT
+import uuid
 
-
-# Type definitions for LCM and ROS messages, be gentle for now
-# just a sketch until proper translation is written
-@runtime_checkable
-class DimosMessage(Protocol):
-    """Protocol for LCM message types (from dimos_lcm or lcm_msgs)."""
-
-    msg_name: str
-    __slots__: tuple[str, ...]
+from dimos.msgs import DimosMsg
+from dimos.protocol.pubsub.spec import PubSub
 
 
 @runtime_checkable
@@ -57,18 +50,24 @@ class ROSMessage(Protocol):
 
 
 @dataclass
-class ROSTopic:
-    """Topic descriptor for ROS pubsub."""
+class RawROSTopic:
+    """Topic descriptor for raw ROS pubsub (uses ROS types directly)."""
 
     topic: str
     ros_type: type
-    qos: "QoSProfile | None" = None  # Optional per-topic QoS override
+    qos: "QoSProfile | None" = None
 
 
-import uuid
+@dataclass
+class ROSTopic:
+    """Topic descriptor for DimosROS pubsub (uses dimos message types)."""
+
+    topic: str
+    msg_type: type[DimosMsg]
+    qos: "QoSProfile | None" = None
 
 
-class RawROS(PubSub[ROSTopic, Any]):
+class RawROS(PubSub[RawROSTopic, Any]):
     """ROS 2 PubSub implementation following the PubSub spec.
 
     This allows direct comparison of ROS messaging performance against
@@ -94,7 +93,7 @@ class RawROS(PubSub[ROSTopic, Any]):
 
         # Track publishers and subscriptions
         self._publishers: dict[str, Any] = {}
-        self._subscriptions: dict[str, list[tuple[Any, Callable[[Any, ROSTopic], None]]]] = {}
+        self._subscriptions: dict[str, list[tuple[Any, Callable[[Any, RawROSTopic], None]]]] = {}
         self._lock = threading.Lock()
 
         # QoS profile - use provided or default to best-effort for throughput
@@ -170,7 +169,7 @@ class RawROS(PubSub[ROSTopic, Any]):
             except Exception:
                 break
 
-    def _get_or_create_publisher(self, topic: ROSTopic) -> Any:
+    def _get_or_create_publisher(self, topic: RawROSTopic) -> Any:
         """Get existing publisher or create a new one."""
         with self._lock:
             if topic.topic not in self._publishers:
@@ -183,11 +182,11 @@ class RawROS(PubSub[ROSTopic, Any]):
                 )
             return self._publishers[topic.topic]
 
-    def publish(self, topic: ROSTopic, message: Any) -> None:
+    def publish(self, topic: RawROSTopic, message: Any) -> None:
         """Publish a message to a ROS topic.
 
         Args:
-            topic: ROSTopic descriptor with topic name and message type
+            topic: RawROSTopic descriptor with topic name and message type
             message: ROS message to publish
         """
         if self._node is None:
@@ -197,12 +196,12 @@ class RawROS(PubSub[ROSTopic, Any]):
         publisher.publish(message)
 
     def subscribe(
-        self, topic: ROSTopic, callback: Callable[[Any, ROSTopic], None]
+        self, topic: RawROSTopic, callback: Callable[[Any, RawROSTopic], None]
     ) -> Callable[[], None]:
         """Subscribe to a ROS topic with a callback.
 
         Args:
-            topic: ROSTopic descriptor with topic name and message type
+            topic: RawROSTopic descriptor with topic name and message type
             callback: Function called with (message, topic) when message received
 
         Returns:
@@ -239,43 +238,92 @@ class RawROS(PubSub[ROSTopic, Any]):
             return unsubscribe
 
 
-class Dimos2RosMixin(PubSubEncoderMixin[TopicT, DimosMessage, ROSMessage]):
-    """Mixin that converts between dimos_lcm (LCM-based) and ROS messages.
+def _derive_ros_type(dimos_type: type[DimosMsg]) -> type:
+    """Derive the ROS message type from a dimos message type.
 
-    This enables seamless interop: publish Dimos messages to ROS topics
-    and receive ROS messages as Dimos messages.
+    Args:
+        dimos_type: A dimos message type (e.g., dimos.msgs.geometry_msgs.Vector3)
+
+    Returns:
+        The corresponding ROS message type (e.g., geometry_msgs.msg.Vector3)
+
+    Example:
+        msg_name = "geometry_msgs.Vector3" -> geometry_msgs.msg.Vector3
+    """
+    msg_name = dimos_type.msg_name  # e.g., "geometry_msgs.Vector3"
+    parts = msg_name.split(".")
+    if len(parts) != 2:
+        raise ValueError(f"Invalid msg_name format: {msg_name}, expected 'package.MessageName'")
+
+    package, message_name = parts
+    ros_module = importlib.import_module(f"{package}.msg")
+    return getattr(ros_module, message_name)
+
+
+def _dimos_to_ros(msg: DimosMsg, ros_type: type) -> ROSMessage:
+    """Convert a dimos message to a ROS message by copying fields."""
+    ros_msg = ros_type()
+    # Get fields from ROS message type
+    fields = ros_msg.get_fields_and_field_types()
+    for field_name in fields:
+        if hasattr(msg, field_name):
+            setattr(ros_msg, field_name, getattr(msg, field_name))
+    return ros_msg
+
+
+def _ros_to_dimos(msg: ROSMessage, dimos_type: type[DimosMsg]) -> DimosMsg:
+    """Convert a ROS message to a dimos message by copying fields."""
+    # Get fields from ROS message
+    fields = msg.get_fields_and_field_types()
+    kwargs = {}
+    for field_name in fields:
+        if hasattr(msg, field_name):
+            kwargs[field_name] = getattr(msg, field_name)
+    return dimos_type(**kwargs)
+
+
+class DimosROS(RawROS):
+    """ROS PubSub with automatic dimos.msgs ↔ ROS message conversion.
+
+    Uses ROSTopic (with dimos msg_type) instead of RawROSTopic (with ros_type).
+    Automatically converts between dimos and ROS message formats.
     """
 
-    def encode(self, msg: DimosMessage, *_: TopicT) -> ROSMessage:
-        """Convert a dimos_lcm message to its equivalent ROS message.
+    def _to_raw_topic(self, topic: ROSTopic) -> RawROSTopic:
+        """Convert a ROSTopic to a RawROSTopic by deriving the ROS type."""
+        ros_type = _derive_ros_type(topic.msg_type)
+        return RawROSTopic(topic=topic.topic, ros_type=ros_type, qos=topic.qos)
+
+    def publish(self, topic: ROSTopic, message: DimosMsg) -> None:  # type: ignore[override]
+        """Publish a dimos message to a ROS topic.
 
         Args:
-            msg: An LCM message (e.g., dimos_lcm.geometry_msgs.Vector3)
-
-        Returns:
-            The corresponding ROS message (e.g., geometry_msgs.msg.Vector3)
+            topic: ROSTopic with dimos msg_type
+            message: Dimos message to publish
         """
-        raise NotImplementedError("Encode method not implemented")
+        raw_topic = self._to_raw_topic(topic)
+        ros_message = _dimos_to_ros(message, raw_topic.ros_type)
+        super().publish(raw_topic, ros_message)
 
-    def decode(self, msg: ROSMessage, _: TopicT | None = None) -> DimosMessage:
-        """Convert a ROS message to its equivalent dimos_lcm message.
+    def subscribe(
+        self, topic: ROSTopic, callback: Callable[[DimosMsg, ROSTopic], None]
+    ) -> Callable[[], None]:  # type: ignore[override]
+        """Subscribe to a ROS topic with automatic dimos message conversion.
 
         Args:
-            msg: A ROS message (e.g., geometry_msgs.msg.Vector3)
+            topic: ROSTopic with dimos msg_type
+            callback: Function called with (dimos_message, topic)
 
         Returns:
-            The corresponding LCM message (e.g., dimos_lcm.geometry_msgs.Vector3)
+            Unsubscribe function
         """
-        raise NotImplementedError("Decode method not implemented")
+        raw_topic = self._to_raw_topic(topic)
 
+        def wrapped_callback(ros_msg: Any, _raw_topic: RawROSTopic) -> None:
+            dimos_msg = _ros_to_dimos(ros_msg, topic.msg_type)
+            callback(dimos_msg, topic)
 
-class DimosROS(
-    Dimos2RosMixin[ROSTopic],
-    RawROS,
-):
-    """ROS PubSub with automatic dimos.msgs ↔ ROS message conversion."""
-
-    pass
+        return super().subscribe(raw_topic, wrapped_callback)
 
 
 ROS = DimosROS

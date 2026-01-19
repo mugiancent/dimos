@@ -70,7 +70,7 @@ try:
         QoSReliabilityPolicy,
     )
 
-    from dimos.protocol.pubsub.rospubsub import RawROS, ROSTopic
+    from dimos.protocol.pubsub.rospubsub import RawROS, RawROSTopic
 
     # Use RELIABLE QoS with larger depth for testing
     _test_qos = QoSProfile(
@@ -93,7 +93,7 @@ try:
     testdata.append(
         (
             ros_context,
-            ROSTopic(topic="/test_ros_topic", ros_type=ROSVector3, qos=_test_qos),
+            RawROSTopic(topic="/test_ros_topic", ros_type=ROSVector3, qos=_test_qos),
             [
                 ROSVector3(x=1.0, y=2.0, z=3.0),
                 ROSVector3(x=4.0, y=5.0, z=6.0),

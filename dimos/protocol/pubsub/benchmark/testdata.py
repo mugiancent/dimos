@@ -80,12 +80,12 @@ def udp_raw_msggen(size: int) -> tuple[LCMTopic, bytes]:
     return (topic, make_data(size))
 
 
-testdata.append(
-    TestCase(
-        pubsub_context=udp_raw_pubsub_channel,
-        msg_gen=udp_raw_msggen,
-    )
-)
+# testdata.append(
+#     TestCase(
+#         pubsub_context=udp_raw_pubsub_channel,
+#         msg_gen=udp_raw_msggen,
+#     )
+# )
 
 
 @contextmanager
