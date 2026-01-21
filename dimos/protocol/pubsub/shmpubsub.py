@@ -32,6 +32,7 @@ import uuid
 import numpy as np
 import numpy.typing as npt
 
+from dimos.protocol.pubsub.lcmpubsub import LCMEncoderMixin, Topic
 from dimos.protocol.pubsub.shm.ipc_factory import CpuShmChannel
 from dimos.protocol.pubsub.spec import PickleEncoderMixin, PubSub, PubSubEncoderMixin
 from dimos.utils.logging_config import setup_logger
@@ -42,21 +43,11 @@ if TYPE_CHECKING:
 logger = setup_logger()
 
 
-# --------------------------------------------------------------------------------------
-# Configuration (kept local to PubSub now that Service is gone)
-# --------------------------------------------------------------------------------------
-
-
 @dataclass
 class SharedMemoryConfig:
     prefer: str = "auto"  # "auto" | "cpu"  (DIMOS_IPC_BACKEND overrides), TODO: "cuda"
     default_capacity: int = 3686400  # payload bytes (excludes 4-byte header)
     close_channels_on_stop: bool = True
-
-
-# --------------------------------------------------------------------------------------
-# Core PubSub with integrated SHM/IPC transport (previously the Service logic)
-# --------------------------------------------------------------------------------------
 
 
 class SharedMemoryPubSubBase(PubSub[str, Any]):
@@ -83,6 +74,7 @@ class SharedMemoryPubSubBase(PubSub[str, Any]):
             "last_local_payload",
             "last_seq",
             "publish_buffer",
+            "publish_lock",
             "shape",
             "stop",
             "subs",
@@ -105,6 +97,8 @@ class SharedMemoryPubSubBase(PubSub[str, Any]):
             self.suppress_counts: dict[bytes, int] = defaultdict(int)  # UUID bytes as key
             # Pre-allocated buffer to avoid allocation on every publish
             self.publish_buffer: npt.NDArray[np.uint8] = np.zeros(self.shape, dtype=self.dtype)
+            # Lock for thread-safe publish buffer access
+            self.publish_lock = threading.Lock()
 
     # ----- init / lifecycle -------------------------------------------------
 
@@ -183,16 +177,18 @@ class SharedMemoryPubSubBase(PubSub[str, Any]):
         # Build host frame [len:4] + [uuid:16] + payload and publish
         # We embed the message UUID in the frame for echo suppression
         # Reuse pre-allocated buffer to avoid allocation overhead
-        host = st.publish_buffer
-        # Pack: length(4) + uuid(16) + payload
-        header = struct.pack("<I", L + 16)  # L+16 for uuid
-        host[:4] = np.frombuffer(header, dtype=np.uint8)
-        host[4:20] = np.frombuffer(message_id, dtype=np.uint8)
-        if L:
-            host[20 : 20 + L] = np.frombuffer(memoryview(payload_bytes), dtype=np.uint8)
+        # Lock to prevent concurrent threads from corrupting the shared buffer
+        with st.publish_lock:
+            host = st.publish_buffer
+            # Pack: length(4) + uuid(16) + payload
+            header = struct.pack("<I", L + 16)  # L+16 for uuid
+            host[:4] = np.frombuffer(header, dtype=np.uint8)
+            host[4:20] = np.frombuffer(message_id, dtype=np.uint8)
+            if L:
+                host[20 : 20 + L] = np.frombuffer(memoryview(payload_bytes), dtype=np.uint8)
 
-        # Only copy actual message size (header + payload) not full capacity
-        st.channel.publish(host, length=20 + L)
+            # Only copy actual message size (header + payload) not full capacity
+            st.channel.publish(host, length=20 + L)
 
     def subscribe(self, topic: str, callback: Callable[[bytes, str], Any]) -> Callable[[], None]:
         """Subscribe a callback(message: bytes, topic). Returns unsubscribe."""
@@ -222,12 +218,14 @@ class SharedMemoryPubSubBase(PubSub[str, Any]):
         st = self._ensure_topic(topic)
         new_cap = int(capacity)
         new_shape = (new_cap + 20,)  # +20 for header: length(4) + uuid(16)
-        desc = st.channel.reconfigure(new_shape, np.uint8)
-        st.capacity = new_cap
-        st.shape = new_shape
-        st.dtype = np.uint8
-        st.last_seq = -1
-        st.publish_buffer = np.zeros(new_shape, dtype=np.uint8)
+        # Lock to ensure no publish is using the buffer while we replace it
+        with st.publish_lock:
+            desc = st.channel.reconfigure(new_shape, np.uint8)
+            st.capacity = new_cap
+            st.shape = new_shape
+            st.dtype = np.uint8
+            st.last_seq = -1
+            st.publish_buffer = np.zeros(new_shape, dtype=np.uint8)
         return desc  # type: ignore[no-any-return]
 
     # ----- Internals --------------------------------------------------------
@@ -297,30 +295,7 @@ class SharedMemoryPubSubBase(PubSub[str, Any]):
                     pass
 
 
-# --------------------------------------------------------------------------------------
-# Encoders + concrete PubSub classes
-# --------------------------------------------------------------------------------------
-
-
-class SharedMemoryBytesEncoderMixin(PubSubEncoderMixin[str, bytes, bytes]):
-    """Identity encoder for raw bytes."""
-
-    def encode(self, msg: bytes, _: str) -> bytes:
-        if isinstance(msg, bytes | bytearray | memoryview):
-            return bytes(msg)
-        raise TypeError(f"SharedMemory expects bytes-like, got {type(msg)!r}")
-
-    def decode(self, msg: bytes, _: str) -> bytes:
-        return msg
-
-
-class SharedMemory(
-    SharedMemoryBytesEncoderMixin,
-    SharedMemoryPubSubBase,
-):
-    """SharedMemory pubsub that transports raw bytes."""
-
-    ...
+BytesSharedMemory = SharedMemoryPubSubBase
 
 
 class PickleSharedMemory(
@@ -330,13 +305,6 @@ class PickleSharedMemory(
     """SharedMemory pubsub that transports arbitrary Python objects via pickle."""
 
     ...
-
-
-# --------------------------------------------------------------------------------------
-# LCM-encoded SharedMemory (uses LCM binary format over SHM transport)
-# --------------------------------------------------------------------------------------
-
-from dimos.protocol.pubsub.lcmpubsub import LCMEncoderMixin, Topic
 
 
 class LCMSharedMemoryPubSubBase(PubSub[Topic, Any]):
