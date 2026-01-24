@@ -1,24 +1,27 @@
 # Intro
 
-Transports enable communication between [modules](modules.md) across process boundaries and networks. When modules run in different processes or on different machines, they need a transport layer to exchange messages.
+Transports enable communication between [modules](modules.md) across process boundaries and networks.
 
-For example each line in this graph is a Transport, each node is a Module.
+Each line in this example graph is a Transport, each node is a Module.
 
 ![output](assets/go2_agentic.svg)
 
-Each of these lines can be a different Transport (protocol) that modules use to communicate with each other. Module transports are always unidirectional.
-They can be things like HTTP server, redis, ros dds etc. Generally for most deployments we use the same pubsub protocol, usually LCM or shared memory.
+Each of these lines can be a different Transport (protocol) that modules use to communicate with each other.
+
+Module transports are always unidirectional (they have a broadcaster and receiver side)
+
+Implementation wise these are things like HTTP server, redis, ROS DDS etc. Generally for most deployments we use the same pubsub protocol, usually LCM or shared memory.
 
 Modules internally don't know or care how their data is transported. They just emit messages and subscribe to messages. It is a job of a transport to reliably deliver those messages.
 
-Messages can be anything a transport can transport
+Messages can be anything a transport can transport, so binary data, images, pointclouds etc. Most of the time these are `dimos.msgs`
 
 # Using Transports with Blueprints
 
 See [Blueprints](blueprints.md) for more on blueprints API
 
 From [`unitree_go2_blueprints.py`](/dimos/robot/unitree_webrtc/unitree_go2_blueprints.py)
-Here is an example of rebinding some topics used for Unitree GO2 to `ROSTransport` (defined at [`transport.py`](/dimos/core/transport.py#L226))
+Here is an example of rebinding some topics used for Unitree GO2 to `ROSTransport` (defined at [`transport.py`](/dimos/core/transport.py#L226)) from the default `LCMTransport`
 
 This allows us to view the data with rviz2
 
@@ -123,7 +126,11 @@ Image(shape=(480, 640, 3), format=RGB, dtype=uint8, dev=cpu, ts=2026-01-24 20:28
 
 Transport is implemented by subclassing `Transport` at [`core/stream.py`](/dimos/core/stream.py#L83) and implementing `broadcast` and `subscribe` functions.
 
-Your init arguments to Transport can be an IP address and port, a shared memory segment name, a file path, or a Redis channel, the way you transfer and encode the data is an implementation detail left to you. You can specify which type of data you are able to transport on a type level. For example Video encoding HTTP transport probaby only takes Image type. TCP channel takes bytes etc.
+Your init arguments to Transport can be anything you'd like - an IP address and port, a shared memory segment name, a file path, or a Redis channel,
+
+The way you transfer and encode the data is an implementation detail left to you. You can specify which type of data you are able to transport on a type level.
+
+For example Video encoding HTTP transport probaby only takes Image type. TCP channel takes bytes etc.
 
 Rebinding an existing go2 blueprint to use (imagined) TCP transport for lidar (each module that requires lidar data would connect via TCP to this ip) would look something like this:
 
@@ -143,7 +150,9 @@ If helpful, all our types provide `lcm_encode` and `lcm_decode` functions for (f
 
 # Practice (PubSub Transports)
 
-For now at dimos, we've been using exclusively PubSub protocols for our transports `PubSub` abstract class is what those protocol implementations conform to.
+For now at dimos, we've been using exclusively PubSub protocols for our transports.
+
+`PubSub` abstract class is what those protocols implement, it's just `publish(topic, message)` and `subscribe(topic, callback)` functions
 
 ```python session=pubsub_demo ansi=false
 from dimos.protocol.pubsub.spec import PubSub
@@ -155,7 +164,7 @@ print(inspect.getsource(PubSub.subscribe))
 ```
 
 <!--Result:-->
-```
+```python
     @abstractmethod
     def publish(self, topic: TopicT, message: MsgT) -> None:
         """Publish a message to a topic."""
@@ -171,19 +180,17 @@ print(inspect.getsource(PubSub.subscribe))
 
 So new protocols are very easy to implement.
 
-Key points:
-- `publish(topic, message)` - Send a message to all subscribers on a topic
-- `subscribe(topic, callback)` - Register a callback, returns an unsubscribe function
+We don't tell you what topic type actually is, it can be a complex configuration object, and we also don't tell you what a message is. it can be bytes, json etc. Generally most of our transports we have are made to transport specifically our ros compatible message types (see [LCM](/docs/concepts/lcm.md))
 
-We don't tell you what topic type actually is, it can be a complex configuration object, and we also don't tell you what a message is. it can be bytes, json etc. If you accept `DimosMsg` [`msgs/protocol.py`](/dimos/msgs/protocol.py#L19) you'll be able to transport any dimos msg, but we don't prevent you from implementing bytes only transports, video streams etc
+But we also have generic pickle transports that will send off any python object
 
 # Using Transports Directly
+
+We could easily instantiate and pass messages using a pubsub implementation, though normally you would not do this, and would use module or blueprint level API.
 
 ## LCM
 
 LCM is UDP multicast, will work through fast reliable networks on a robot.
-
-We could easily instantiate and pass messages using a pubsub implementation (though normally you would not do this, and would use module or blueprint level API)
 
 ```python session=lcm_demo ansi=false
 from dimos.protocol.pubsub.lcmpubsub import LCM, Topic
@@ -235,7 +242,6 @@ shm.stop()
 ```
 Received: [{'data': [1, 2, 3]}]
 ```
-
 
 # Implementing a Simple Transport
 
