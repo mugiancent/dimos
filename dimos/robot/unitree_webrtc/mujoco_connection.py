@@ -147,7 +147,9 @@ class MujocoConnection:
                 # Use weakref to avoid preventing garbage collection
                 weak_self = weakref.ref(self)
 
-                def cleanup_on_exit(weak_self=weak_self) -> None:
+                def cleanup_on_exit(
+                    weak_self: "weakref.ReferenceType[MujocoConnection]" = weak_self,
+                ) -> None:
                     instance = weak_self()
                     if instance is not None:
                         instance.stop()
