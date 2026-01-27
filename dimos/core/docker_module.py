@@ -34,23 +34,13 @@ logger = setup_logger()
 # Import well-known service ports from their canonical location
 from dimos.dashboard.rerun_init import RERUN_GRPC_PORT, RERUN_WEB_PORT
 
-# Timeout for `docker run` command execution
-DOCKER_RUN_TIMEOUT = 120
+DOCKER_RUN_TIMEOUT = 120  #     Timeout for `docker run` command execution
+DOCKER_CMD_TIMEOUT = 20 #       Timeout for quick Docker commands (inspect, rm, logs)
+DOCKER_STATUS_TIMEOUT = 10 #    Timeout for container status checks
+DOCKER_STOP_TIMEOUT = 30 #      Timeout for `docker stop` command (graceful shutdown)
+RPC_READY_TIMEOUT = 3.0 #       Timeout for RPC readiness probe during container startup
+LOG_TAIL_LINES = 200 #          Number of log lines to include in error messages
 
-# Timeout for quick Docker commands (inspect, rm, logs)
-DOCKER_CMD_TIMEOUT = 20
-
-# Timeout for container status checks
-DOCKER_STATUS_TIMEOUT = 10
-
-# Timeout for `docker stop` command (graceful shutdown)
-DOCKER_STOP_TIMEOUT = 30
-
-# Timeout for RPC readiness probe during container startup
-RPC_READY_TIMEOUT = 3.0
-
-# Number of log lines to include in error messages
-LOG_TAIL_LINES = 200
 
 @dataclass
 class DockerModuleConfig(ModuleConfig):
@@ -113,166 +103,9 @@ def _run(cmd: list[str], *, timeout: float | None = None) -> subprocess.Complete
     logger.debug(f"exec: {' '.join(cmd)}")
     return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
 
-def _run_streaming(cmd: list[str], prefix: str = "") -> int:
-    """Run command with real-time output streaming. Returns exit code."""
-    logger.debug(f"exec (streaming): {' '.join(cmd)}")
-    process = subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,
-    )
-    step_count = 0
-    for line in iter(process.stdout.readline, ""):
-        line = line.rstrip()
-        if not line:
-            continue
-        # Parse Docker build step numbers for progress indication
-        if line.startswith("Step ") or line.startswith("#"):
-            step_count += 1
-            step_info = line[:80] + "..." if len(line) > 80 else line
-            print(f"\r{prefix}[{step_count}] {step_info}", end="", flush=True)
-        elif "downloading" in line.lower() or "pulling" in line.lower():
-            print(f"\r{prefix}{line[:60]}...", end="", flush=True)
-        elif "error" in line.lower() or "failed" in line.lower():
-            print(f"\n{prefix}{line}", flush=True)
-    print()  # Final newline
-    process.wait()
-    return process.returncode
-
 def _docker_bin(cfg: DockerModuleConfig) -> str:
     """Get docker binary path, defaulting to 'docker' if empty/None."""
     return cfg.docker_bin or "docker"
-
-def _image_exists(docker_bin: str, image_name: str) -> bool:
-    """Check if a Docker image exists locally."""
-    r = _run([docker_bin, "image", "inspect", image_name], timeout=DOCKER_CMD_TIMEOUT)
-    return r.returncode == 0
-
-
-def _extract_base_image(dockerfile: Path) -> str | None:
-    """Extract the base image from a Dockerfile's FROM line."""
-    import re
-    content = dockerfile.read_text()
-    # Match FROM line, handling ARG substitution like FROM ${BASE_IMAGE}
-    for line in content.split("\n"):
-        line = line.strip()
-        if line.upper().startswith("FROM "):
-            # Extract image name (handles "FROM image" and "FROM image AS stage")
-            parts = line.split()
-            if len(parts) >= 2:
-                return parts[1]
-    return None
-
-
-# Map DimOS base image tags to their Dockerfile paths (relative to repo root)
-DIMOS_BASE_IMAGES = {
-    "ghcr.io/dimensionalos/dimos-base:cuda12.8-py310": "docker/base/Dockerfile.cuda",
-    "ghcr.io/dimensionalos/dimos-base:cuda12.4-py310": "docker/base/Dockerfile.cuda",
-    "ghcr.io/dimensionalos/dimos-base:cuda11.8-py310": "docker/base/Dockerfile.cuda",
-    "ghcr.io/dimensionalos/dimos-base:py310": "docker/base/Dockerfile.cpu",
-}
-
-# CUDA version build args for each base image
-DIMOS_BASE_BUILD_ARGS = {
-    "ghcr.io/dimensionalos/dimos-base:cuda12.8-py310": {"CUDA_VERSION": "12.8.1"},
-    "ghcr.io/dimensionalos/dimos-base:cuda12.4-py310": {"CUDA_VERSION": "12.4.1"},
-    "ghcr.io/dimensionalos/dimos-base:cuda11.8-py310": {"CUDA_VERSION": "11.8.0"},
-    "ghcr.io/dimensionalos/dimos-base:py310": {},
-}
-
-
-def _find_repo_root(start_path: Path) -> Path | None:
-    """Find the repository root by looking for pyproject.toml or .git."""
-    current = start_path.resolve()
-    for _ in range(10):  # Max 10 levels up
-        if (current / "pyproject.toml").exists() or (current / ".git").exists():
-            return current
-        parent = current.parent
-        if parent == current:
-            break
-        current = parent
-    return None
-
-
-def _ensure_base_image(cfg: DockerModuleConfig, dockerfile: Path) -> bool:
-    """Ensure base image exists. Pulls external images, builds DimOS base images."""
-    docker = _docker_bin(cfg)
-    base_image = _extract_base_image(dockerfile)
-    if not base_image:
-        return True
-
-    # Already exists locally
-    if _image_exists(docker, base_image):
-        return True
-
-    # External image → pull it
-    if base_image not in DIMOS_BASE_IMAGES:
-        logger.info(f"Pulling base image: {base_image}")
-        exit_code = _run_streaming([docker, "pull", base_image], prefix="  ")
-        return exit_code == 0
-
-    # DimOS base image → build it
-    repo_root = _find_repo_root(dockerfile)
-    base_dockerfile = repo_root / DIMOS_BASE_IMAGES[base_image] if repo_root else None
-    if not base_dockerfile or not base_dockerfile.exists():
-        logger.error(f"Base Dockerfile not found for {base_image}")
-        return False
-
-    logger.info(f"Building base image: {base_image} (this may take a while)")
-    cmd = [docker, "build", "-t", base_image, "-f", str(base_dockerfile)]
-    for k, v in DIMOS_BASE_BUILD_ARGS.get(base_image, {}).items():
-        cmd.extend(["--build-arg", f"{k}={v}"])
-    cmd.append(str(repo_root))
-
-    exit_code = _run_streaming(cmd, prefix="  ")
-    if exit_code != 0:
-        logger.error(f"Failed to build base image (exit code {exit_code})")
-    return exit_code == 0
-
-def _convert_dockerfile(dockerfile: Path) -> Path:
-    """Convert non-DimOS Dockerfile by appending DimOS footer. Returns new path."""
-    content = dockerfile.read_text()
-    # Already DimOS-compatible (has dimos-base OR already has DimOS install)
-    if "dimos-base:" in content or "module-install.sh" in content or "/dimos/entrypoint.sh" in content:
-        return dockerfile
-
-    logger.info(f"Converting {dockerfile.name} to DimOS format (footer mode)")
-    from dimos.robot.cli.dockerize import convert_footer
-    converted_path = dockerfile.parent / f".{dockerfile.name}.dimos"
-    converted_path.write_text(convert_footer(content))
-    return converted_path
-
-
-def _build_image(cfg: DockerModuleConfig) -> None:
-    """Build Docker image. Ensures base image exists and converts Dockerfile if needed."""
-    if not cfg.docker_file or not cfg.docker_image:
-        raise ValueError("docker_file and docker_image are required")
-
-    dockerfile = cfg.docker_file
-    base_image = _extract_base_image(dockerfile)
-
-    # DimOS base → ensure it's built, use Dockerfile as-is (user wrote it for dimos-base)
-    if base_image and base_image in DIMOS_BASE_IMAGES:
-        if not _ensure_base_image(cfg, dockerfile):
-            logger.warning(f"Base image build failed, falling back to footer mode")
-            dockerfile = _convert_dockerfile(dockerfile)
-        # else: use dockerfile as-is (Option A - written for dimos-base)
-    else:
-        # Non-DimOS base → convert using footer mode (Option B)
-        dockerfile = _convert_dockerfile(dockerfile)
-
-    context = cfg.docker_build_context or cfg.docker_file.parent
-    cmd = [_docker_bin(cfg), "build", "-t", cfg.docker_image, "-f", str(dockerfile)]
-    for k, v in cfg.docker_build_args.items():
-        cmd.extend(["--build-arg", f"{k}={v}"])
-    cmd.append(str(context))
-
-    logger.info(f"Building Docker image: {cfg.docker_image} (this may take a while for first build, go grab a coffee!)")
-    exit_code = _run_streaming(cmd, prefix="  ")
-    if exit_code != 0:
-        raise RuntimeError(f"Docker build failed with exit code {exit_code}")
 
 def _remove_container(cfg: DockerModuleConfig, name: str) -> None:
     _run([_docker_bin(cfg), "rm", "-f", name], timeout=DOCKER_CMD_TIMEOUT)
@@ -297,7 +130,7 @@ def _extract_module_config(cfg: DockerModuleConfig) -> dict[str, Any]:
             json.dumps(v)
             out[k] = v
         except (TypeError, ValueError):
-            pass  # Skip non-serializable fields silently
+            logger.debug(f"Config field '{k}' not JSON-serializable, skipping")
     return out
 
 # Host-side Docker-backed Module handle
@@ -338,9 +171,10 @@ class DockerModule:
         self._bound_rpc_calls: dict[str, RpcCall] = {}
 
         # Build image if needed
-        if not _image_exists(_docker_bin(config), config.docker_image):
+        from dimos.core.docker_build import build_image, image_exists
+        if not image_exists(config):
             logger.info(f"Building {config.docker_image}")
-            _build_image(config)
+            build_image(config)
 
         # Auto-start container (must be running before transports are connected)
         self.start()
@@ -412,6 +246,16 @@ class DockerModule:
 
     def tail_logs(self, n: int = 200) -> str:
         return _tail_logs(self._config, self._container_name, n=n)
+
+    def set_transport(self, stream_name: str, transport: Any) -> bool:
+        """Configure stream transport in container. Mirrors DaskModule.set_transport() for autoconnect()."""
+        topic = getattr(transport, "topic", None)
+        if hasattr(topic, "topic"):
+            topic = topic.topic
+        result, _ = self.rpc.call_sync(
+            f"{self.remote_name}/configure_stream", ((stream_name, str(topic)), {})
+        )
+        return result
 
     def __getattr__(self, name: str) -> Any:
         if name in self.rpcs:
@@ -581,7 +425,7 @@ class StandaloneModuleRunner:
         # Merge config fields into kwargs (Configurable creates config from these)
         if "config" in self.kwargs:
             config_dict = self.kwargs.pop("config")
-            # Config fields go first, extra kwargs can override
+            # Config fields go first, extra kwargs go later
             self.kwargs = {**config_dict, **self.kwargs}
 
         self._module = module_class(*self.args, **self.kwargs)

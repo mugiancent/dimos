@@ -13,9 +13,7 @@
 # limitations under the License.
 
 from __future__ import annotations
-
 import threading
-
 from dimos.core.skill_module import SkillModule
 from dimos.core.stream import In, Out
 from dimos.msgs.geometry_msgs import PoseArray
@@ -72,12 +70,8 @@ class GraspingSkillContainer(SkillModule):
     @skill()
     def generate_grasps(self, object_name: str = "object", timeout: float = 120.0) -> str:
         """Generate grasp poses for the specified object.
-
         This waits for the grasp generator to finish before returning.
-
-        Args:
-            object_name: Name of the object to generate grasps for (e.g., "cup", "bottle")
-            timeout: Maximum time to wait for grasps (seconds). Default 120s.
+        object_name is the name of the object to generate grasps.
         """
         # Clear previous grasps and reset event
         self._latest_grasps = None
@@ -104,22 +98,6 @@ class GraspingSkillContainer(SkillModule):
             f"Best grasp: pos=({pos.x:.4f}, {pos.y:.4f}, {pos.z:.4f}), "
             f"rpy=({rpy.x:.1f}, {rpy.y:.1f}, {rpy.z:.1f}) degrees"
         )
-
-    @skill()
-    def get_grasps(self) -> str:
-        """Get the latest grasp poses."""
-        if self._latest_grasps is None or len(self._latest_grasps.poses) == 0:
-            return "No grasps available"
-
-        best = self._latest_grasps.poses[0]
-        pos = best.position
-        rpy = quaternion_to_euler(best.orientation, degrees=True)
-        return (
-            f"{len(self._latest_grasps.poses)} grasps available. "
-            f"Best: pos=({pos.x:.4f}, {pos.y:.4f}, {pos.z:.4f}), "
-            f"rpy=({rpy.x:.1f}, {rpy.y:.1f}, {rpy.z:.1f}) degrees"
-        )
-
 
 grasping_skill = GraspingSkillContainer.blueprint
 
