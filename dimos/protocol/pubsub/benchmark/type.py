@@ -50,14 +50,15 @@ def _format_size(size_bytes: int) -> str:
     return f"{size_bytes} B"
 
 
-def _format_throughput(bytes_per_sec: float) -> str:
-    """Format throughput to human-readable string."""
-    if bytes_per_sec >= 1e9:
-        return f"{bytes_per_sec / 1e9:.2f} GB/s"
-    if bytes_per_sec >= 1e6:
-        return f"{bytes_per_sec / 1e6:.2f} MB/s"
-    if bytes_per_sec >= 1e3:
-        return f"{bytes_per_sec / 1e3:.2f} KB/s"
+def format_throughput(bytes_per_sec: float) -> str:
+    """IEC units (binary): KiB/MiB/GiB = 1024^1/2/3 bytes."""
+    k = 1024.0
+    if bytes_per_sec >= k**3:
+        return f"{bytes_per_sec / (k**3):.2f} GiB/s"
+    if bytes_per_sec >= k**2:
+        return f"{bytes_per_sec / (k**2):.2f} MiB/s"
+    if bytes_per_sec >= k:
+        return f"{bytes_per_sec / k:.2f} KiB/s"
     return f"{bytes_per_sec:.2f} B/s"
 
 
