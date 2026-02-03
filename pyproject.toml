@@ -51,7 +51,8 @@ dependencies = [
     "colorlog==6.9.0",
     # Core Msgs
     "opencv-python",
-    "open3d",
+    # FIXME: open3d is disabled on Orin while testing
+    "open3d ; not (platform_machine == 'aarch64' and sys_platform == 'linux')",
     # CLI
     "pydantic-settings>=2.11.0,<3",
     "textual==3.7.1",
