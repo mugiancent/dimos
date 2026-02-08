@@ -45,7 +45,7 @@ class KeyboardTeleop(Module):
         self._stop_event = threading.Event()
 
     @rpc
-    def start(self) -> bool:
+    def start(self) -> None:
         super().start()
 
         self._keys_held = set()
@@ -54,7 +54,7 @@ class KeyboardTeleop(Module):
         self._thread = threading.Thread(target=self._pygame_loop, daemon=True)
         self._thread.start()
 
-        return True
+        return
 
     @rpc
     def stop(self) -> None:

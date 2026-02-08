@@ -119,7 +119,7 @@ class NavigationModule(Module):
         return False
 
     @rpc
-    def stop(self) -> bool:
+    def stop(self) -> None:
         """
         Cancel current navigation by publishing to cancel_goal.
 
@@ -131,6 +131,6 @@ class NavigationModule(Module):
         if self.cancel_goal:
             cancel_msg = Bool(data=True)
             self.cancel_goal.publish(cancel_msg)
-            return True
+            return
 
-        return False
+        return

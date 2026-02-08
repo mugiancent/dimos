@@ -47,7 +47,7 @@ class JoystickModule(Module):
         self.current_mode = 0  # Start in IDLE mode for safety
 
     @rpc
-    def start(self) -> bool:
+    def start(self) -> None:
         """Initialize pygame and start control loop."""
 
         super().start()
@@ -56,7 +56,7 @@ class JoystickModule(Module):
             import pygame  # noqa: F401
         except ImportError:
             print("ERROR: pygame not installed. Install with: pip install pygame")
-            return False
+            return
 
         self.keys_held = set()  # type: ignore[var-annotated]
         self.pygame_ready = True
@@ -66,7 +66,7 @@ class JoystickModule(Module):
         self._thread = threading.Thread(target=self._pygame_loop, daemon=True)
         self._thread.start()
 
-        return True
+        return
 
     @rpc
     def stop(self) -> None:

@@ -103,7 +103,7 @@ class DroneConnectionModule(Module):
         Module.__init__(self, *args, **kwargs)
 
     @rpc
-    def start(self) -> bool:
+    def start(self) -> None:
         """Start the connection and subscribe to sensor streams."""
         # Check for replay mode
         if self.connection_string == "replay":
@@ -120,7 +120,7 @@ class DroneConnectionModule(Module):
 
         if not self.connection.connected:
             logger.error("Failed to connect to drone")
-            return False
+            return
 
         # Start video stream (already created above)
         if self.video_stream.start():
@@ -172,7 +172,7 @@ class DroneConnectionModule(Module):
         self._telemetry_thread.start()
 
         logger.info("Drone connection module started")
-        return True
+        return
 
     def _store_and_publish_frame(self, frame: Image) -> None:
         """Store the latest video frame and publish it."""
