@@ -16,6 +16,7 @@ from dataclasses import dataclass
 import logging
 import threading
 import time
+from typing import cast
 
 import cv2
 
@@ -29,6 +30,7 @@ from dimos_lcm.vision_msgs import (
     Pose2D,
 )
 import numpy as np
+from numpy.typing import NDArray
 from reactivex.disposable import Disposable
 
 from dimos.core.core import rpc
@@ -291,10 +293,10 @@ class ObjectTracker2D(Module[ObjectTracker2DConfig]):
         viz_msg = Image.from_numpy(viz_copy, format=ImageFormat.RGB)
         self.tracked_overlay.publish(viz_msg)
 
-    def _draw_visualization(self, image: np.ndarray, bbox: list[int]) -> np.ndarray:  # type: ignore[type-arg]
+    def _draw_visualization(self, image: NDArray[np.uint8], bbox: list[int]) -> NDArray[np.uint8]:
         """Draw tracking visualization."""
         viz_image = image.copy()
         x1, y1, x2, y2 = bbox
         cv2.rectangle(viz_image, (x1, y1), (x2, y2), (0, 255, 0), 2)
         cv2.putText(viz_image, "TRACKING", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-        return viz_image
+        return cast("NDArray[np.uint8]", viz_image)

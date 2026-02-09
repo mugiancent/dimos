@@ -18,11 +18,12 @@
 import json
 import threading
 import time
-from typing import Any
+from typing import Any, cast
 
 import cv2
 from dimos_lcm.std_msgs import String
 import numpy as np
+from numpy.typing import NDArray
 
 from dimos.core import In, Module, Out, rpc
 from dimos.models.qwen.video_query import get_bbox_from_qwen_frame
@@ -308,10 +309,10 @@ class DroneTrackingModule(Module):
 
     def _draw_tracking_overlay(
         self,
-        frame: np.ndarray[Any, np.dtype[Any]],
+        frame: NDArray[np.uint8],
         bbox: tuple[int, int, int, int],
         center: tuple[int, int],
-    ) -> np.ndarray[Any, np.dtype[Any]]:
+    ) -> NDArray[np.uint8]:
         """Draw tracking visualization overlay.
 
         Args:
@@ -351,7 +352,7 @@ class DroneTrackingModule(Module):
             overlay, error_text, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 1
         )
 
-        return overlay
+        return cast("NDArray[np.uint8]", overlay)
 
     def _publish_status(self, status: dict[str, Any]) -> None:
         """Publish tracking status as JSON.

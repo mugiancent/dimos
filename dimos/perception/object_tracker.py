@@ -15,6 +15,7 @@
 from dataclasses import dataclass
 import threading
 import time
+from typing import cast
 
 import cv2
 
@@ -25,6 +26,7 @@ from dimos_lcm.vision_msgs import (
     ObjectHypothesisWithPose,
 )
 import numpy as np
+from numpy.typing import NDArray
 from reactivex.disposable import Disposable
 
 from dimos.core.core import rpc
@@ -557,7 +559,7 @@ class ObjectTracking(Module[ObjectTrackingConfig]):
                 viz_msg = Image.from_numpy(viz_image)
                 self.tracked_overlay.publish(viz_msg)
 
-    def _draw_reid_matches(self, image: np.ndarray) -> np.ndarray:  # type: ignore[type-arg]
+    def _draw_reid_matches(self, image: NDArray[np.uint8]) -> NDArray[np.uint8]:
         """Draw REID feature matches on the image."""
         viz_image = image.copy()
 
@@ -599,7 +601,7 @@ class ObjectTracking(Module[ObjectTrackingConfig]):
             viz_image, status_text, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, status_color, 2
         )
 
-        return viz_image
+        return cast("NDArray[np.uint8]", viz_image)
 
     def _get_depth_from_bbox(self, bbox: list[int], depth_frame: np.ndarray) -> float | None:  # type: ignore[type-arg]
         """Calculate depth from bbox using the 25th percentile of closest points.
