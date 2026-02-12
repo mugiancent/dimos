@@ -43,6 +43,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh && export PATH="$HOME/.local/bin
 
 # this allows getting large files on-demand
 export GIT_LFS_SKIP_SMUDGE=1
+# later, fetch assets as needed with: git lfs pull
 git clone -b dev https://github.com/dimensionalOS/dimos.git
 cd dimos
 
