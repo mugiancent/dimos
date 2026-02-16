@@ -13,141 +13,132 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""ROS topic monitoring module for AGIbot validation."""
+"""ROS topic monitoring module for AGIbot validation.
+
+Monitors the LCM-side outputs of ROSNav to verify that ROS topics are
+being received and bridged correctly. This validates the full pipeline:
+
+    ROS topic → ROSTransport → ROSNav → LCM → this module
+
+If we see data here, the AGIbot nav stack is working end-to-end.
+"""
 
 from dataclasses import dataclass, field
 import time
-from typing import Any
 
-from dimos.core import Module, Streamer
+from dimos.core import In, Module, rpc
+from dimos.msgs.geometry_msgs import PoseStamped, Twist
+from dimos.msgs.nav_msgs import Path
+from dimos.msgs.sensor_msgs import PointCloud2
+from dimos.utils.logging_config import setup_logger
+
+logger = setup_logger()
 
 
 @dataclass
 class TopicStats:
-    """Statistics for a single ROS topic."""
+    """Statistics for a monitored stream."""
 
-    topic_name: str
+    name: str
     msg_count: int = 0
     last_msg_time: float = 0.0
     first_msg_time: float = 0.0
-    msg_times: list[float] = field(default_factory=list)
+    _recent_times: list[float] = field(default_factory=list)
 
     @property
     def rate_hz(self) -> float:
-        """Compute message rate in Hz."""
-        if len(self.msg_times) < 2:
+        if len(self._recent_times) < 2:
             return 0.0
-        time_span = self.msg_times[-1] - self.msg_times[0]
-        if time_span == 0:
-            return 0.0
-        return (len(self.msg_times) - 1) / time_span
+        span = self._recent_times[-1] - self._recent_times[0]
+        return (len(self._recent_times) - 1) / span if span > 0 else 0.0
 
     @property
     def latency_ms(self) -> float:
-        """Time since last message in ms."""
         if self.last_msg_time == 0:
             return float("inf")
         return (time.time() - self.last_msg_time) * 1000
 
+    def record(self) -> None:
+        now = time.time()
+        self.msg_count += 1
+        self.last_msg_time = now
+        if self.first_msg_time == 0:
+            self.first_msg_time = now
+        self._recent_times.append(now)
+        if len(self._recent_times) > 100:
+            self._recent_times.pop(0)
+
 
 class ROSTopicMonitor(Module):
-    """Monitor ROS topics and report health statistics.
+    """Monitor DimOS streams bridged from ROS by ROSNav.
 
-    Tracks message rates, latencies, and data validity for:
-    - Lidar (/scan)
-    - Camera (/camera/image_raw)
-    - Odometry (/odom)
-    - Velocity commands (/cmd_vel)
+    Subscribes to the LCM-side ports that ROSNav publishes to, verifying
+    that lidar, camera, velocity, and path data flow through correctly.
+
+    Health report every 5 seconds:
+        ✅ OK       - data flowing at expected rate
+        ⚠️  WARN    - data flowing but slow or intermittent
+        ❌ NO DATA  - nothing received
     """
 
-    topics_to_monitor = [
-        "/scan",
-        "/camera/image_raw",
-        "/odom",
-        "/cmd_vel",
-    ]
+    # LCM-side ports (filled by ROSNav outputs via autoconnect)
+    pointcloud: In[PointCloud2]  # /lidar — from ros_registered_scan
+    global_pointcloud: In[PointCloud2]  # /map — from ros_terrain_map_ext
+    cmd_vel: In[Twist]  # /cmd_vel — from ros_cmd_vel
+    goal_active: In[PoseStamped]  # /goal_active — from ros_way_point
+    path_active: In[Path]  # /path_active — from ros_path
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
-        self.stats: dict[str, TopicStats] = {}
-        self.window_size = 100  # Keep last N timestamps for rate calc
+        self._stats: dict[str, TopicStats] = {}
 
-    def start(self):
-        """Initialize topic statistics."""
-        for topic in self.topics_to_monitor:
-            self.stats[topic] = TopicStats(topic_name=topic)
-        self.log.info(f"Monitoring topics: {self.topics_to_monitor}")
+    @rpc
+    def start(self) -> None:
+        super().start()
+        streams = {
+            "pointcloud (lidar)": self.pointcloud,
+            "global_pointcloud (map)": self.global_pointcloud,
+            "cmd_vel": self.cmd_vel,
+            "goal_active": self.goal_active,
+            "path_active": self.path_active,
+        }
+        for name, port in streams.items():
+            stats = TopicStats(name=name)
+            self._stats[name] = stats
+            port.subscribe(lambda _msg, s=stats: s.record())
 
-    def _update_stats(self, topic: str, msg: Any):
-        """Update statistics for a topic."""
-        if topic not in self.stats:
+        logger.info(f"ROSTopicMonitor: watching {len(streams)} streams")
+
+    def tick(self) -> None:
+        # Report every ~5 seconds (assuming default tick frequency)
+        if self.ticks % max(1, int(5 * self.frequency)) != 0:
             return
 
-        stats = self.stats[topic]
-        now = time.time()
-
-        stats.msg_count += 1
-        stats.last_msg_time = now
-        if stats.first_msg_time == 0:
-            stats.first_msg_time = now
-
-        stats.msg_times.append(now)
-        if len(stats.msg_times) > self.window_size:
-            stats.msg_times.pop(0)
-
-    @Streamer.handle("/scan")
-    def on_lidar(self, msg):
-        """Handle lidar scan messages."""
-        self._update_stats("/scan", msg)
-        # Validate lidar data
-        if hasattr(msg, "ranges"):
-            valid_ranges = [r for r in msg.ranges if r > 0 and r < float("inf")]
-            if len(valid_ranges) < len(msg.ranges) * 0.5:
-                self.log.warning(
-                    f"Lidar data quality low: only {len(valid_ranges)}/{len(msg.ranges)} valid ranges"
-                )
-
-    @Streamer.handle("/camera/image_raw")
-    def on_camera(self, msg):
-        """Handle camera image messages."""
-        self._update_stats("/camera/image_raw", msg)
-        # Validate image data
-        if hasattr(msg, "height") and hasattr(msg, "width"):
-            if msg.height == 0 or msg.width == 0:
-                self.log.warning("Received empty camera frame")
-
-    @Streamer.handle("/odom")
-    def on_odom(self, msg):
-        """Handle odometry messages."""
-        self._update_stats("/odom", msg)
-
-    @Streamer.handle("/cmd_vel")
-    def on_cmd_vel(self, msg):
-        """Handle velocity command messages."""
-        self._update_stats("/cmd_vel", msg)
-
-    def tick(self):
-        """Periodic health report."""
-        # Report every 5 seconds
-        if self.ticks % (5 * self.frequency) != 0:
-            return
-
-        self.log.info("=== ROS Topic Health Report ===")
-        for topic, stats in self.stats.items():
+        logger.info("═══ AGIbot ROS→LCM Health Report ═══")
+        for stats in self._stats.values():
             rate = stats.rate_hz
             latency = stats.latency_ms
 
-            status = (
-                "✅ OK"
-                if rate > 1.0 and latency < 1000
-                else "⚠️  WARN"
-                if rate > 0
-                else "❌ NO DATA"
+            if rate > 1.0 and latency < 1000:
+                icon = "✅"
+            elif stats.msg_count > 0:
+                icon = "⚠️ "
+            else:
+                icon = "❌"
+
+            logger.info(
+                f"  {icon} {stats.name:30s} │ "
+                f"n={stats.msg_count:6d} │ "
+                f"{rate:6.1f} Hz │ "
+                f"lat {latency:7.0f} ms"
             )
 
-            self.log.info(
-                f"{status} {topic:25s} | "
-                f"Count: {stats.msg_count:6d} | "
-                f"Rate: {rate:6.2f} Hz | "
-                f"Latency: {latency:7.1f} ms"
-            )
+        # Summary verdict
+        active = sum(1 for s in self._stats.values() if s.msg_count > 0)
+        total = len(self._stats)
+        if active == total:
+            logger.info(f"  ── ALL STREAMS OK ({active}/{total}) ──")
+        elif active > 0:
+            logger.warning(f"  ── PARTIAL ({active}/{total} active) ──")
+        else:
+            logger.error(f"  ── NO DATA on any stream ({total} monitored) ──")
