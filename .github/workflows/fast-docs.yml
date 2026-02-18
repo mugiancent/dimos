@@ -2,10 +2,11 @@ name: docs
 
 on:
   pull_request:
-      - main
-      - dev
-  paths:
-      - 'docs/**'
+    branches:
+        - main
+        - dev
+    paths:
+        - 'docs/**'
   workflow_dispatch:
 
 permissions:

@@ -32,8 +32,8 @@ if [ "$OSTYPE" = "linux-gnu" ]; then
     sudo apt-get install -y curl g++ portaudio19-dev git-lfs libturbojpeg python3-dev pre-commit
 # On macOS (12.6 or newer)
 elif [ "$(uname)" = "Darwin" ]; then
-    # install homebrew
-    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    # install homebrew if not installed
+    ! command -v brew && /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
     # install dependencies
     brew install gnu-sed gcc portaudio git-lfs libjpeg-turbo python pre-commit
 fi
