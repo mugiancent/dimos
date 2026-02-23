@@ -20,8 +20,10 @@ Encapsulates ROS transport and topic remapping for Unitree robots.
 
 from dataclasses import dataclass, field
 import logging
+from pathlib import Path
 import threading
 import time
+from typing import Any
 
 from reactivex import operators as ops
 from reactivex.subject import Subject
@@ -29,7 +31,7 @@ from reactivex.subject import Subject
 from dimos import spec
 from dimos.agents.annotation import skill
 from dimos.core import DimosCluster, In, LCMTransport, Module, Out, rpc
-from dimos.core.module import ModuleConfig
+from dimos.core.docker_runner import DockerModuleConfig
 from dimos.core.transport import ROSTransport
 from dimos.msgs.geometry_msgs import (
     PoseStamped,
@@ -39,7 +41,7 @@ from dimos.msgs.geometry_msgs import (
     TwistStamped,
     Vector3,
 )
-from dimos.msgs.nav_msgs import Path
+from dimos.msgs.nav_msgs import Path as NavPath
 from dimos.msgs.sensor_msgs import Joy, PointCloud2
 from dimos.msgs.std_msgs import Bool, Int8
 from dimos.msgs.tf2_msgs.TFMessage import TFMessage
@@ -49,9 +51,40 @@ from dimos.utils.transform_utils import euler_to_quaternion
 
 logger = setup_logger(level=logging.INFO)
 
+# Paths resolved relative to this file so they work on any machine
+_DIMOS_ROOT = Path(__file__).parent.parent.parent
+_DOCKERFILE = _DIMOS_ROOT / "docker" / "navigation" / "Dockerfile"
+
 
 @dataclass
-class Config(ModuleConfig):
+class ROSNavConfig(DockerModuleConfig):
+    # --- Docker settings ---
+    docker_image: str = "dimos_autonomy_stack:humble"
+    docker_shm_size: str = "8g"
+    docker_entrypoint: str = "/usr/local/bin/dimos_module_entrypoint.sh"
+    docker_file: Path = field(default_factory=lambda: _DOCKERFILE)
+    docker_build_context: Path = field(default_factory=lambda: _DIMOS_ROOT)
+    # Jetson uses --runtime=nvidia, not --gpus all (which triggers the unsupported Hook path)
+    docker_gpus: str | None = None
+    docker_extra_args: list = field(default_factory=lambda: ["--runtime=nvidia"])
+    docker_env: dict = field(
+        default_factory=lambda: {
+            "ROS_DISTRO": "humble",
+            "ROS_DOMAIN_ID": "42",
+            "RMW_IMPLEMENTATION": "rmw_fastrtps_cpp",
+            "FASTRTPS_DEFAULT_PROFILES_FILE": "/ros2_ws/config/fastdds.xml",
+            # Set to "false" for hardware mode where the nav stack runs externally
+            "START_ROS_NAV": "true",
+        }
+    )
+    docker_volumes: list = field(
+        default_factory=lambda: [
+            # Mount live dimos source so the module is always up-to-date
+            (str(_DIMOS_ROOT), "/workspace/dimos", "rw"),
+        ]
+    )
+
+    # --- Module settings ---
     local_pointcloud_freq: float = 2.0
     global_map_freq: float = 1.0
     sensor_to_base_link_transform: Transform = field(
@@ -62,8 +95,8 @@ class Config(ModuleConfig):
 class ROSNav(
     Module, NavigationInterface, spec.Nav, spec.GlobalPointcloud, spec.Pointcloud, spec.LocalPlanner
 ):
-    config: Config
-    default_config = Config
+    config: ROSNavConfig
+    default_config = ROSNavConfig
 
     # Existing ports (default LCM/pSHM transport)
     goal_req: In[PoseStamped]
@@ -72,7 +105,7 @@ class ROSNav(
     global_map: Out[PointCloud2]
 
     goal_active: Out[PoseStamped]
-    path_active: Out[Path]
+    path_active: Out[NavPath]
     cmd_vel: Out[Twist]
 
     # ROS In ports (receiving from ROS topics via ROSTransport)
@@ -81,7 +114,7 @@ class ROSNav(
     ros_way_point: In[PoseStamped]
     ros_registered_scan: In[PointCloud2]
     ros_global_map: In[PointCloud2]
-    ros_path: In[Path]
+    ros_path: In[NavPath]
     ros_tf: In[TFMessage]
 
     # ROS Out ports (publishing to ROS topics via ROSTransport)
@@ -104,7 +137,7 @@ class ROSNav(
     _current_goal: PoseStamped | None = None
     _goal_reached: bool = False
 
-    def __init__(self, *args, **kwargs) -> None:  # type: ignore[no-untyped-def]
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
 
         # Initialize RxPY Subjects for streaming data
@@ -118,9 +151,36 @@ class ROSNav(
 
         logger.info("NavigationModule initialized")
 
+    def _configure_ros_transports(self) -> None:
+        """
+        Wire up ROS topic transports for all ROS ports.
+
+        Called automatically in start() when running inside Docker (where the
+        host-side deploy() has not pre-configured these transports).  In non-Docker
+        deployments the deploy() function sets these externally before start() is
+        called, so this method is skipped.
+        """
+        self.ros_goal_reached.transport = ROSTransport("/goal_reached", Bool)
+        self.ros_cmd_vel.transport = ROSTransport("/cmd_vel", TwistStamped)
+        self.ros_way_point.transport = ROSTransport("/way_point", PoseStamped)
+        self.ros_registered_scan.transport = ROSTransport("/registered_scan", PointCloud2)
+        self.ros_global_map.transport = ROSTransport("/terrain_map_ext", PointCloud2)
+        self.ros_path.transport = ROSTransport("/path", NavPath)
+        self.ros_tf.transport = ROSTransport("/tf", TFMessage)
+        self.ros_goal_pose.transport = ROSTransport("/goal_pose", PoseStamped)
+        self.ros_cancel_goal.transport = ROSTransport("/cancel_goal", Bool)
+        self.ros_soft_stop.transport = ROSTransport("/stop", Int8)
+        self.ros_joy.transport = ROSTransport("/joy", Joy)
+
     @rpc
     def start(self) -> None:
         self._running = True
+
+        # In Docker mode the host-side deploy() does not set ROS transports
+        # (ROSTransport requires rclpy, only available inside the container).
+        # Configure them here if they haven't been set externally.
+        if self.ros_goal_reached.transport is None:
+            self._configure_ros_transports()
 
         self._disposables.add(
             self._local_pointcloud_subject.pipe(
@@ -171,7 +231,7 @@ class ROSNav(
     def _on_ros_global_map(self, msg: PointCloud2) -> None:
         self._global_map_subject.on_next(msg)
 
-    def _on_ros_path(self, msg: Path) -> None:
+    def _on_ros_path(self, msg: NavPath) -> None:
         msg.frame_id = "base_link"
         self.path_active.publish(msg)
 
@@ -375,34 +435,30 @@ class ROSNav(
 ros_nav = ROSNav.blueprint
 
 
-def deploy(dimos: DimosCluster):  # type: ignore[no-untyped-def]
-    nav = dimos.deploy(ROSNav)  # type: ignore[attr-defined]
+def deploy(dimos: DimosCluster) -> Any:  # type: ignore[no-untyped-def]
+    """
+    Deploy ROSNav as a DockerModule.
 
-    # Existing ports on LCM transports
-    nav.pointcloud.transport = LCMTransport("/lidar", PointCloud2)
-    nav.global_map.transport = LCMTransport("/map", PointCloud2)
-    nav.goal_req.transport = LCMTransport("/goal_req", PoseStamped)
-    nav.goal_active.transport = LCMTransport("/goal_active", PoseStamped)
-    nav.path_active.transport = LCMTransport("/path_active", Path)
-    nav.cmd_vel.transport = LCMTransport("/cmd_vel", Twist)
+    The container runs both the ROS navigation stack (in the background via
+    dimos_module_entrypoint.sh) and the ROSNav DimOS module.  ROS transports
+    are wired up inside the container by ROSNav.start(); only the external
+    LCM ports are configured here from the host side.
+    """
+    nav = dimos.deploy(ROSNav)
 
-    # ROS In transports (receiving from ROS navigation stack)
-    nav.ros_goal_reached.transport = ROSTransport("/goal_reached", Bool)
-    nav.ros_cmd_vel.transport = ROSTransport("/cmd_vel", TwistStamped)
-    nav.ros_way_point.transport = ROSTransport("/way_point", PoseStamped)
-    nav.ros_registered_scan.transport = ROSTransport("/registered_scan", PointCloud2)
-    nav.ros_global_map.transport = ROSTransport("/terrain_map_ext", PointCloud2)
-    nav.ros_path.transport = ROSTransport("/path", Path)
-    nav.ros_tf.transport = ROSTransport("/tf", TFMessage)
+    # External (LCM) ports - configured from host, bridged into the container
+    nav.set_transport("pointcloud", LCMTransport("/lidar", PointCloud2))
+    nav.set_transport("global_map", LCMTransport("/map", PointCloud2))
+    nav.set_transport("goal_req", LCMTransport("/goal_req", PoseStamped))
+    nav.set_transport("goal_active", LCMTransport("/goal_active", PoseStamped))
+    nav.set_transport("path_active", LCMTransport("/path_active", NavPath))
+    nav.set_transport("cmd_vel", LCMTransport("/cmd_vel", Twist))
 
-    # ROS Out transports (publishing to ROS navigation stack)
-    nav.ros_goal_pose.transport = ROSTransport("/goal_pose", PoseStamped)
-    nav.ros_cancel_goal.transport = ROSTransport("/cancel_goal", Bool)
-    nav.ros_soft_stop.transport = ROSTransport("/stop", Int8)
-    nav.ros_joy.transport = ROSTransport("/joy", Joy)
+    # ROS transports are configured inside the container by _configure_ros_transports()
+    # called from start() - no host-side setup needed.
 
     nav.start()
     return nav
 
 
-__all__ = ["ROSNav", "deploy", "ros_nav"]
+__all__ = ["ROSNav", "ROSNavConfig", "deploy", "ros_nav"]

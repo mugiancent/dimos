@@ -344,7 +344,6 @@ RUN cat > ${WORKSPACE}/config/fastdds.xml <<'EOF'
             <transport_id>shm_transport</transport_id>
             <type>SHM</type>
             <segment_size>10485760</segment_size>
-            <max_message_size>1048576</max_message_size>
         </transport_descriptor>
     </transport_descriptors>
 </profiles>
@@ -388,7 +387,8 @@ COPY docker/navigation/run_both.sh /usr/local/bin/run_both.sh
 COPY docker/navigation/ros_launch_wrapper.py /usr/local/bin/ros_launch_wrapper.py
 COPY docker/navigation/foxglove_utility/twist_relay.py /usr/local/bin/twist_relay.py
 COPY docker/navigation/foxglove_utility/goal_autonomy_relay.py /usr/local/bin/goal_autonomy_relay.py
-RUN chmod +x /usr/local/bin/run_both.sh /usr/local/bin/ros_launch_wrapper.py /usr/local/bin/twist_relay.py /usr/local/bin/goal_autonomy_relay.py
+COPY docker/navigation/dimos_module_entrypoint.sh /usr/local/bin/dimos_module_entrypoint.sh
+RUN chmod +x /usr/local/bin/run_both.sh /usr/local/bin/ros_launch_wrapper.py /usr/local/bin/twist_relay.py /usr/local/bin/goal_autonomy_relay.py /usr/local/bin/dimos_module_entrypoint.sh
 
 # Set up udev rules for motor controller
 RUN mkdir -p /etc/udev/rules.d && \
