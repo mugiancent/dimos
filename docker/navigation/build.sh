@@ -93,19 +93,23 @@ else
             exit 1
         fi
         git fetch ${TARGET_REMOTE} ${TARGET_BRANCH}
-        # Only reset if the commit actually changed — git reset --hard updates
-        # file mtimes even when content is identical, which busts Docker's COPY cache
-        # and forces all downstream layers (including the ~25min colcon build) to rerun.
-        NEW_HEAD=$(git rev-parse ${TARGET_REMOTE}/${TARGET_BRANCH})
-        CURRENT_HEAD=$(git rev-parse HEAD)
-        if [ "$CURRENT_HEAD" != "$NEW_HEAD" ]; then
-            git reset --hard ${TARGET_REMOTE}/${TARGET_BRANCH}
-        else
-            echo -e "${GREEN}Already at latest commit ${CURRENT_HEAD:0:8}, skipping reset${NC}"
-        fi
+        git reset --hard ${TARGET_REMOTE}/${TARGET_BRANCH}
     fi
     cd ..
 fi
+
+# Normalize every tracked file's mtime to the HEAD commit timestamp.
+# git clone and reset --hard assign the current wall-clock time as mtime,
+# so two identical checkouts produce different mtimes and bust Docker's COPY
+# cache even when file content is byte-for-byte identical.  Pinning all mtimes
+# to the commit timestamp makes the cache key deterministic: same commit →
+# same mtimes → cache hit, regardless of when or how the repo was checked out.
+echo -e "${GREEN}Pinning ros-navigation-autonomy-stack file timestamps to HEAD commit...${NC}"
+(
+    cd ros-navigation-autonomy-stack
+    COMMIT_TIME=$(git log -1 --format=%ct)
+    git ls-files -z | xargs -0 touch -d "@${COMMIT_TIME}"
+)
 
 if [ ! -d "unity_models" ]; then
     echo -e "${YELLOW}Using office_building_1 as the Unity environment...${NC}"
