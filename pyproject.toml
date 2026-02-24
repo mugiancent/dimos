@@ -23,7 +23,7 @@ name = "dimos"
 authors = [
     {name = "Dimensional Team", email = "build@dimensionalOS.com"},
 ]
-version = "0.0.10"
+version = "0.0.10.post1"
 description = "Powering agentive generalist robotics"
 requires-python = ">=3.10"
 readme = "README.md"
@@ -119,6 +119,7 @@ misc = [
 
     # Hardware SDKs
     "xarm-python-sdk>=1.17.0",
+    "portal",
 ]
 
 visualization = [
@@ -141,9 +142,6 @@ agents = [
     "openai",
     "openai-whisper",
     "sounddevice",
-
-    # MCP Server
-    "mcp>=1.0.0",
 ]
 
 web = [
@@ -305,10 +303,6 @@ base = [
     "dimos[agents,web,perception,visualization,sim]",
 ]
 
-
-[tool.uv]
-constraint-dependencies = ["setuptools<82"]
-
 [tool.ruff]
 line-length = 100
 exclude = [
@@ -411,7 +405,7 @@ env = [
   "GOOGLE_MAPS_API_KEY=AIzafake_google_key",
   "PYTHONWARNINGS=ignore:cupyx.jit.rawkernel is experimental:FutureWarning",
 ]
-addopts = "-v -p no:warnings -ra --color=yes -m 'not (vis or exclude or tool or lcm or ros or heavy or gpu or module or e2e or integration or neverending or mujoco)'"
+addopts = "-v -s -p no:warnings -ra --color=yes -m 'not (vis or exclude or tool or lcm or ros or heavy or gpu or module or e2e or integration or neverending or mujoco)'"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 
