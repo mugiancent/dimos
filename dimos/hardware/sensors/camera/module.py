@@ -14,7 +14,6 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-import sys
 import time
 from typing import Any
 
@@ -32,11 +31,6 @@ from dimos.msgs.sensor_msgs.CameraInfo import CameraInfo
 from dimos.msgs.sensor_msgs.Image import Image, sharpness_barrier
 from dimos.spec import perception
 from dimos.visualization.rerun.bridge import rerun_bridge
-
-if sys.version_info >= (3, 13):
-    from typing import TypeVar
-else:
-    from typing_extensions import TypeVar
 
 
 def default_transform() -> Transform:
@@ -56,10 +50,7 @@ class CameraModuleConfig(ModuleConfig):
     frequency: float = 0.0  # Hz, 0 means no limit
 
 
-CameraConfigT = TypeVar("CameraConfigT", bound=CameraModuleConfig, default=CameraModuleConfig)
-
-
-class CameraModule(Module[CameraConfigT], perception.Camera):
+class CameraModule(Module[CameraModuleConfig], perception.Camera):
     color_image: Out[Image]
     camera_info: Out[CameraInfo]
 
