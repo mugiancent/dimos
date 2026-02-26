@@ -70,9 +70,6 @@ class TeleopIKTaskConfig:
         max_joint_delta_deg: Maximum allowed joint change per tick (safety limit)
         hand: "left" or "right" — which controller's primary button to listen to
         gripper_joint: Optional joint name for the gripper (e.g. "arm_gripper").
-            When set, on_gripper_trigger() maps a 0-1 analog trigger to gripper
-            position and includes it in JointCommandOutput each tick alongside
-            the arm joints. Requires a ConnectedGripper registered under this name.
         gripper_open_pos: Gripper position (meters) at trigger value 0.0 (no press).
         gripper_closed_pos: Gripper position (meters) at trigger value 1.0 (full press).
     """
@@ -82,12 +79,10 @@ class TeleopIKTaskConfig:
     ee_joint_id: int
     priority: int = 10
     timeout: float = 0.5
-    max_joint_delta_deg: float = (
-        20.0  # loosened; tighten once IK null-space regularization is added
-    )
+    max_joint_delta_deg: float = 20.0
     hand: str = ""
     gripper_joint: str | None = None
-    gripper_open_pos: float = 0.85
+    gripper_open_pos: float = 0.0
     gripper_closed_pos: float = 0.0
 
 
@@ -354,18 +349,7 @@ class TeleopIKTask(BaseControlTask):
         return True
 
     def on_gripper_trigger(self, value: float, _t_now: float) -> bool:
-        """Map analog trigger (0-1) to gripper position.
-
-        Called each tick by the coordinator when a trigger stream is wired in.
-        Linearly interpolates: 0.0 → gripper_open_pos, 1.0 → gripper_closed_pos.
-
-        Args:
-            value: Trigger value in [0.0, 1.0] (0 = no press, 1 = full press)
-            t_now: Current time (unused — gripper holds position indefinitely)
-
-        Returns:
-            True if gripper_joint is configured, False otherwise
-        """
+        """Map analog trigger (0-1) to gripper position"""
         if not self._config.gripper_joint:
             return False
 

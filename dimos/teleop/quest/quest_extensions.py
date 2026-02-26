@@ -136,13 +136,7 @@ class ArmTeleopModule(QuestTeleopModule):
         left: QuestControllerState | None,
         right: QuestControllerState | None,
     ) -> None:
-        """Publish Buttons with analog triggers packed into bits 16-31.
-
-        Builds the standard digital Buttons, then packs raw analog trigger
-        floats from QuestControllerState into bits 16-23 (left) and 24-31
-        (right) so the downstream TeleopIKTask can drive proportional gripper
-        control via on_buttons().
-        """
+        """Publish Buttons with analog triggers packed into bits 16-31"""
         buttons = Buttons.from_controllers(left, right)
         buttons.pack_analog_triggers(
             left=left.trigger if left is not None else 0.0,

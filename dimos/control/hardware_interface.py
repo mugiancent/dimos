@@ -305,7 +305,6 @@ class ConnectedGripper(ConnectedHardware):
         component: HardwareComponent,
     ) -> None:
         super().__init__(adapter, component)
-        # Gripper starts at 0 — no need to read current position on init
         self._last_commanded = {name: 0.0 for name in self._joint_names}
         self._initialized = True
 
@@ -335,10 +334,6 @@ class ConnectedGripper(ConnectedHardware):
         if joint_name not in commands:
             return True  # nothing commanded this tick, hold current
         return self._adapter.write_gripper_position(commands[joint_name])
-
-    def _initialize_last_commanded(self) -> None:
-        """No-op: already initialized in __init__."""
-        self._initialized = True
 
 
 __all__ = [

@@ -506,6 +506,8 @@ coordinator_teleop_xarm7 = control_coordinator(
             ee_joint_id=7,
             hand="right",
             gripper_joint=make_gripper_joint("arm"),
+            gripper_open_pos=0.85,  # xArm gripper range
+            gripper_closed_pos=0.0,
         ),
     ],
 ).transports(
@@ -576,24 +578,12 @@ coordinator_teleop_dual = control_coordinator(
             auto_enable=True,
         ),
         HardwareComponent(
-            hardware_id=make_gripper_joint("xarm_arm"),
-            hardware_type=HardwareType.GRIPPER,
-            joints=[make_gripper_joint("xarm_arm")],
-            parent_hardware_id="xarm_arm",
-        ),
-        HardwareComponent(
             hardware_id="piper_arm",
             hardware_type=HardwareType.MANIPULATOR,
             joints=make_joints("piper_arm", 6),
             adapter_type="piper",
             address="can0",
             auto_enable=True,
-        ),
-        HardwareComponent(
-            hardware_id=make_gripper_joint("piper_arm"),
-            hardware_type=HardwareType.GRIPPER,
-            joints=[make_gripper_joint("piper_arm")],
-            parent_hardware_id="piper_arm",
         ),
     ],
     tasks=[
@@ -605,7 +595,6 @@ coordinator_teleop_dual = control_coordinator(
             model_path=_XARM6_MODEL_PATH,
             ee_joint_id=6,
             hand="left",
-            gripper_joint=make_gripper_joint("xarm_arm"),
         ),
         TaskConfig(
             name="teleop_piper",
@@ -615,7 +604,6 @@ coordinator_teleop_dual = control_coordinator(
             model_path=_PIPER_MODEL_PATH,
             ee_joint_id=6,
             hand="right",
-            gripper_joint=make_gripper_joint("piper_arm"),
         ),
     ],
 ).transports(

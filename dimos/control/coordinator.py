@@ -254,11 +254,7 @@ class ControlCoordinator(Module[ControlCoordinatorConfig]):
             raise
 
     def _setup_gripper_hardware(self, component: HardwareComponent) -> None:
-        """Register a gripper by borrowing the parent arm's adapter.
-
-        The gripper shares the parent manipulator's already-connected adapter.
-        No new connection is made; disconnect() on ConnectedGripper is a no-op.
-        """
+        """Register a gripper by borrowing the parent arm's adapter"""
         if not component.parent_hardware_id:
             raise ValueError(
                 f"Gripper component '{component.hardware_id}' requires parent_hardware_id"
@@ -269,8 +265,7 @@ class ControlCoordinator(Module[ControlCoordinatorConfig]):
 
         if parent is None:
             raise ValueError(
-                f"Parent hardware '{component.parent_hardware_id}' not found "
-                f"for gripper '{component.hardware_id}'. "
+                f"Parent hardware '{component.parent_hardware_id}' not found for gripper '{component.hardware_id}'"
                 f"Add the parent arm before the gripper."
             )
 
