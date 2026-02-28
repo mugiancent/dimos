@@ -221,16 +221,24 @@ class QuestTeleopModule(Module[QuestTeleopConfig]):
     # WebSocket Message Decoders
     # -------------------------------------------------------------------------
 
+    @staticmethod
+    def _resolve_hand(frame_id: str) -> Hand:
+        if frame_id == "left":
+            return Hand.LEFT
+        elif frame_id == "right":
+            return Hand.RIGHT
+        raise ValueError(f"Unexpected frame_id: {frame_id!r}, expected 'left' or 'right'")
+
     def _on_pose_bytes(self, data: bytes) -> None:
-        """Decode LCM bytes into PoseStamped, route by frame_id, transform to robot frame."""
+        """Decode LCM bytes into PoseStamped, transform to robot frame."""
         msg = PoseStamped.lcm_decode(data)
-        hand = Hand.LEFT if msg.frame_id == "left" else Hand.RIGHT
+        hand = self._resolve_hand(msg.frame_id)
         robot_pose = webxr_to_robot(msg, is_left_controller=(hand == Hand.LEFT))
         with self._lock:
             self._current_poses[hand] = robot_pose
 
     def _on_joy_bytes(self, data: bytes) -> None:
-        """Decode LCM bytes into Joy, route by frame_id, parse into QuestControllerState."""
+        """Decode LCM bytes into Joy, parse into QuestControllerState."""
         msg = Joy.lcm_decode(data)
         hand = Hand.LEFT if msg.frame_id == "left" else Hand.RIGHT
         try:
