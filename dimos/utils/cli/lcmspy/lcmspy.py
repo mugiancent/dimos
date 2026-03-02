@@ -26,48 +26,47 @@ class Topic:
 
     def __init__(self, name: str, history_window: float = 60.0) -> None:
         self.name = name
-        # Store (timestamp, data_size) tuples for statistics
-        self.message_history = deque()  # type: ignore[var-annotated]
         self.history_window = history_window
-        # Total traffic accumulator (doesn't get cleaned up)
+        # Two fixed-size circular buffers: one bucket per second.
+        # Avoids unbounded memory and the need to copy/lock the deque on reads.
+        self._num_buckets = max(int(history_window), 1)
+        self._count: list[int] = [0] * self._num_buckets
+        self._bytes: list[int] = [0] * self._num_buckets
+        self._bucket_second: list[int] = [-1] * self._num_buckets
         self.total_traffic_bytes = 0
 
     def msg(self, data: bytes) -> None:
-        # print(f"> msg {self.__str__()} {len(data)} bytes")
-        datalen = len(data)
-        self.message_history.append((time.time(), datalen))
-        self.total_traffic_bytes += datalen
-        self._cleanup_old_messages()
+        data_size = len(data)
+        second = int(time.time())
+        idx = second % self._num_buckets
+        if self._bucket_second[idx] != second:
+            self._count[idx] = 0
+            self._bytes[idx] = 0
+            self._bucket_second[idx] = second
+        self._count[idx] += 1
+        self._bytes[idx] += data_size
+        self.total_traffic_bytes += data_size
 
-    def _cleanup_old_messages(self, max_age: float | None = None) -> None:
-        """Remove messages older than max_age seconds"""
-        current_time = time.time()
-        while self.message_history and current_time - self.message_history[0][0] > (
-            max_age or self.history_window
-        ):
-            self.message_history.popleft()
-
-    def _get_messages_in_window(self, time_window: float):  # type: ignore[no-untyped-def]
-        """Get messages within the specified time window"""
-        current_time = time.time()
-        cutoff_time = current_time - time_window
-        return [(ts, size) for ts, size in list(self.message_history) if ts >= cutoff_time]
+    def _window_stats(self, time_window: float) -> tuple[int, int]:
+        """Return (msg_count, total_bytes) for buckets within time_window seconds."""
+        cutoff = time.time() - time_window
+        count = 0
+        total = 0
+        for i in range(self._num_buckets):
+            if self._bucket_second[i] + 1 > cutoff:
+                count += self._count[i]
+                total += self._bytes[i]
+        return count, total
 
     # avg msg freq in the last n seconds
     def freq(self, time_window: float) -> float:
-        messages = self._get_messages_in_window(time_window)
-        if not messages:
-            return 0.0
-        return len(messages) / time_window
+        count, _ = self._window_stats(time_window)
+        return count / time_window
 
     # avg bandwidth in kB/s in the last n seconds
     def kbps(self, time_window: float) -> float:
-        messages = self._get_messages_in_window(time_window)
-        if not messages:
-            return 0.0
-        total_bytes = sum(size for _, size in messages)
-        total_kbytes = total_bytes / 1000  # Convert bytes to kB
-        return total_kbytes / time_window  # type: ignore[no-any-return]
+        _, total_bytes = self._window_stats(time_window)
+        return total_bytes / 1000 / time_window
 
     def kbps_hr(self, time_window: float) -> str:
         """Return human-readable bandwidth with appropriate units"""
@@ -76,11 +75,10 @@ class Topic:
 
     # avg msg size in the last n seconds
     def size(self, time_window: float) -> float:
-        messages = self._get_messages_in_window(time_window)
-        if not messages:
+        count, total_bytes = self._window_stats(time_window)
+        if count == 0:
             return 0.0
-        total_size = sum(size for _, size in messages)
-        return total_size / len(messages)  # type: ignore[no-any-return]
+        return total_bytes / count
 
     def total_traffic(self) -> int:
         """Return total traffic passed in bytes since the beginning"""

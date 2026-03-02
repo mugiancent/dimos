@@ -124,25 +124,24 @@ def test_topic_statistics_direct() -> None:
 
 
 def test_topic_cleanup() -> None:
-    """Test that old messages are properly cleaned up"""
+    """Test that buckets older than history_window are excluded from queries"""
 
-    topic = TopicSpy("/test")
+    topic = TopicSpy("/test", history_window=60.0)
 
-    # Add a message
-    topic.msg(b"test message")
-    initial_count = len(topic.message_history)
-    assert initial_count == 1
+    # Manually write into a bucket that is >60 seconds stale
+    stale_second = int(time.time()) - 70
+    idx = stale_second % topic._num_buckets
+    topic._count[idx] = 99
+    topic._bytes[idx] = 9900
+    topic._bucket_second[idx] = stale_second
 
-    # Simulate time passing by manually adding old timestamps
-    old_time = time.time() - 70  # 70 seconds ago
-    topic.message_history.appendleft((old_time, 10))
+    # Stale bucket should not appear in any query window
+    assert topic.freq(60.0) == 0.0
+    assert topic.kbps(60.0) == 0.0
 
-    # Trigger cleanup
-    topic._cleanup_old_messages(max_age=60.0)
-
-    # Should only have the recent message
-    assert len(topic.message_history) == 1
-    assert topic.message_history[0][0] > time.time() - 10  # Recent message
+    # A fresh message should be visible
+    topic.msg(b"recent")
+    assert topic.freq(60.0) > 0.0
 
 
 def test_graph_topic_basic() -> None:
@@ -180,9 +179,9 @@ def test_lcmspy_global_totals(lcmspy_instance) -> None:
     lcmspy_instance.msg("/odom", b"odometry data")
     lcmspy_instance.msg("/imu", b"imu data")
 
-    # Verify each test topic received exactly one message (ignore LCM discovery packets)
+    # Verify each test topic received at least one message
     for t in ("/video", "/odom", "/imu"):
-        assert len(lcmspy_instance.topic[t].message_history) == 1
+        assert lcmspy_instance.topic[t].total_traffic_bytes > 0
 
     # Check global statistics
     global_freq = lcmspy_instance.freq(1.0)
