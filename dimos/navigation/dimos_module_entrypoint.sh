@@ -177,40 +177,55 @@ if ! [ -d "/workspace/dimos" ]; then
     exit 1
 fi
 export PYTHONPATH="/workspace/dimos:${PYTHONPATH:-}"
-if ! pip install -e /workspace/dimos >/tmp/dimos_pip_install.log 2>&1; then
-    cat /tmp/dimos_pip_install.log
-    echo "[entrypoint] WARNING: pip install -e failed; see /tmp/dimos_pip_install.log"
-    exit 2
-fi
+# start pip install in the background
+pip_install_log_path="/tmp/dimos_pip_install.log"
+pip install -e /workspace/dimos &>"$pip_install_log_path" &
+PIP_INSTALL_PID=$!
 
 # 
 # dds config
 # 
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
-if [ -f "/ros2_ws/config/custom_fastdds.xml" ]; then
-    export FASTRTPS_DEFAULT_PROFILES_FILE=/ros2_ws/config/custom_fastdds.xml
-elif [ -f "/ros2_ws/config/fastdds.xml" ]; then
-    export FASTRTPS_DEFAULT_PROFILES_FILE=/ros2_ws/config/fastdds.xml
+if [ -z "$FASTRTPS_DEFAULT_PROFILES_FILE" ]; then
+    if [ -f "/ros2_ws/config/custom_fastdds.xml" ]; then
+        export FASTRTPS_DEFAULT_PROFILES_FILE=/ros2_ws/config/custom_fastdds.xml
+    elif [ -f "/ros2_ws/config/fastdds.xml" ]; then
+        export FASTRTPS_DEFAULT_PROFILES_FILE=/ros2_ws/config/fastdds.xml
+    fi
+fi
+# ensure file exists
+if ! [ -f "$FASTRTPS_DEFAULT_PROFILES_FILE" ]; then
+    echo "FASTRTPS_DEFAULT_PROFILES_FILE was set (or defaulted to) '$FASTRTPS_DEFAULT_PROFILES_FILE' but that file doesn't exist"
+    exit 4
 fi
 
 # 
-# launch setup
-# 
-if [ ! -d "$STACK_ROOT" ]; then
-    echo "[entrypoint] ERROR: stack root not found: $STACK_ROOT"
-    exit 3
-fi
-cd "$STACK_ROOT"
-
-LAUNCH_ARGS="enable_bridge:=false"
-if [ "$LOCALIZATION_METHOD" = "fastlio" ]; then
-    LAUNCH_ARGS="use_fastlio2:=true ${LAUNCH_ARGS}"
-fi
-
-# 
-# unity sim helpers
+# launch helpers
 # 
 # complicated because of retry system (needed as an alternative to "sleep 5" and praying its enough)
+start_ros_nav_stack() {
+    setsid bash -c "
+        source /opt/ros/${ROS_DISTRO:-humble}/setup.bash
+        source /ros2_ws/install/setup.bash
+        cd ${STACK_ROOT}
+        echo '[entrypoint] running: ros2 launch vehicle_simulator ${LAUNCH_FILE} ${LAUNCH_ARGS}'
+        ros2 launch vehicle_simulator ${LAUNCH_FILE} ${LAUNCH_ARGS}
+    " &
+    ROS_NAV_PID=$!
+    echo "[entrypoint] ROS nav stack PID: $ROS_NAV_PID"
+}
+
+stop_ros_nav_stack() {
+    if [ -n "$ROS_NAV_PID" ] && kill -0 "$ROS_NAV_PID" 2>/dev/null; then
+        kill -TERM "-$ROS_NAV_PID" 2>/dev/null || kill -TERM "$ROS_NAV_PID" 2>/dev/null || true
+        for _ in 1 2 3 4 5; do
+            kill -0 "$ROS_NAV_PID" 2>/dev/null || break
+            sleep 1
+        done
+        kill -KILL "-$ROS_NAV_PID" 2>/dev/null || kill -KILL "$ROS_NAV_PID" 2>/dev/null || true
+    fi
+}
+
 start_unity() {
     if [ ! -f "$UNITY_EXECUTABLE" ]; then
         echo "[entrypoint] ERROR: Unity executable not found: $UNITY_EXECUTABLE"
@@ -229,28 +244,6 @@ start_unity() {
     "$UNITY_EXECUTABLE" &
     UNITY_PID=$!
     echo "[entrypoint] Unity PID: $UNITY_PID"
-}
-
-start_ros_nav_stack() {
-    setsid bash -c "
-        source /opt/ros/${ROS_DISTRO:-humble}/setup.bash
-        source /ros2_ws/install/setup.bash
-        cd ${STACK_ROOT}
-        ros2 launch vehicle_simulator ${LAUNCH_FILE} ${LAUNCH_ARGS}
-    " &
-    ROS_NAV_PID=$!
-    echo "[entrypoint] ROS nav stack PID: $ROS_NAV_PID"
-}
-
-stop_ros_nav_stack() {
-    if [ -n "$ROS_NAV_PID" ] && kill -0 "$ROS_NAV_PID" 2>/dev/null; then
-        kill -TERM "-$ROS_NAV_PID" 2>/dev/null || kill -TERM "$ROS_NAV_PID" 2>/dev/null || true
-        for _ in 1 2 3 4 5; do
-            kill -0 "$ROS_NAV_PID" 2>/dev/null || break
-            sleep 1
-        done
-        kill -KILL "-$ROS_NAV_PID" 2>/dev/null || kill -KILL "$ROS_NAV_PID" 2>/dev/null || true
-    fi
 }
 
 has_established_bridge_tcp() {
@@ -328,10 +321,30 @@ if [ "$MODE" = "unity_sim" ] || [ -z "$MODE" ]; then
     MODE="simulation"
 fi
 
+LAUNCH_ARGS="enable_bridge:=false"
+if [ "$LOCALIZATION_METHOD" = "fastlio" ]; then
+    LAUNCH_ARGS="use_fastlio2:=true ${LAUNCH_ARGS}"
+elif [ "$LOCALIZATION_METHOD" = "arise_slam" ]; then
+    : # nothing it's the default
+else
+    echo "LOCALIZATION_METHOD must be empty or one of 'fastlio', 'arise_slam', but got '$LOCALIZATION_METHOD'"
+    exit 9
+fi
+
+
 # 
 # 
-# Main: Mode selection / behavior
+# Main
 # 
+# 
+if [ ! -d "$STACK_ROOT" ]; then
+    echo "[entrypoint] ERROR: stack root not found: $STACK_ROOT"
+    exit 5
+fi
+cd "$STACK_ROOT"
+
+# 
+# mode
 # 
 if [ "$MODE" = "simulation" ]; then
     if [ "$USE_ROUTE_PLANNER" = "true" ]; then
@@ -342,12 +355,30 @@ if [ "$MODE" = "simulation" ]; then
     start_unity
     launch_with_retry
 elif [ "$MODE" = "hardware" ]; then 
-    echo "[entrypoint] MODE=$MODE is non-simulation; launching ROS nav stack once."
+    if [ "$USE_ROUTE_PLANNER" = "true" ]; then
+        LAUNCH_FILE="system_real_robot_with_route_planner.launch.py"
+    else
+        LAUNCH_FILE="system_real_robot.launch.py"
+    fi
+    start_ros_nav_stack
+elif [ "$MODE" = "bagfile" ]; then 
+    if [ "$USE_ROUTE_PLANNER" = "true" ]; then
+        LAUNCH_FILE="system_bagfile_with_route_planner.launch.py"
+    else
+        LAUNCH_FILE="system_bagfile.launch.py"
+    fi
+    if [ ! -e "$BAGFILE_PATH" ]; then
+        echo "[entrypoint] ERROR: BAGFILE_PATH set but not found: $BAGFILE_PATH"
+        exit 1
+    fi
+    echo "[entrypoint] Playing bag: ros2 bag play --clock $BAGFILE_PATH"
+    ros2 bag play "$BAGFILE_PATH" --clock &
     start_ros_nav_stack
 else
-    echo "MODE must be one of: 'simulation' or 'hardware' but got '$MODE'"
+    echo "MODE must be one of 'simulation', 'hardware', 'bagfile' but got '$MODE'"
     exit 19
 fi
+
 
 # 
 # 
@@ -387,6 +418,14 @@ fi
 
 # start module (when being run from )
 if [ "$#" -gt 0 ]; then
+    
+    # make sure pip install went well
+    if ! wait "$PIP_INSTALL_PID"; then
+        cat "$pip_install_log_path"
+        echo "[entrypoint] WARNING: pip install -e failed; see $pip_install_log_path"
+        exit 29
+    fi
+    
     exec python -m dimos.core.docker_runner run "$@"
 fi
 
