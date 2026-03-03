@@ -101,7 +101,7 @@ def _rel_style(value: float, lo: float, hi: float) -> str:
 
 
 def _fmt_pct(v: float) -> str:
-    return f"{v:.0f}%"
+    return f"{v:3.0f}%"
 
 
 def _fmt_mem(v: float) -> str:
@@ -210,7 +210,7 @@ class ResourceSpyApp(App[None]):
     def on_mount(self) -> None:
         self._lcm.subscribe(Topic(self._topic_name), self._on_msg)
         self._lcm.start()
-        self.set_interval(1.0, self._refresh)
+        self.set_interval(0.5, self._refresh)
 
     async def on_unmount(self) -> None:
         self._lcm.stop()
