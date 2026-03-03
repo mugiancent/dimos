@@ -9,7 +9,7 @@
 The robot boots into "Damp State" by default. In this state:
 - Robot is inactive
 - AI Sport client is not running
-- SDK commands (standup, move, etc.) are **acknowledged but not executed**
+- SDK commands (stand_up, move, etc.) are **acknowledged but not executed**
 - FSM state transitions don't happen
 
 ## Solution: Activate the Robot

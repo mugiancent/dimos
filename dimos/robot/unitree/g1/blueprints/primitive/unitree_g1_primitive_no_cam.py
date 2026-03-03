@@ -20,19 +20,16 @@ from dimos_lcm.sensor_msgs import CameraInfo
 from dimos.core.blueprints import autoconnect
 from dimos.core.global_config import global_config
 from dimos.core.transport import LCMTransport
-from dimos.hardware.sensors.camera import zed
-from dimos.hardware.sensors.camera.module import camera_module  # type: ignore[attr-defined]
-from dimos.hardware.sensors.camera.webcam import Webcam
 from dimos.mapping.costmapper import cost_mapper
 from dimos.mapping.voxels import voxel_mapper
-from dimos.msgs.geometry_msgs import PoseStamped, Quaternion, Transform, Twist, Vector3
+from dimos.msgs.geometry_msgs import PoseStamped, Twist
 from dimos.msgs.nav_msgs import Odometry, Path
 from dimos.msgs.sensor_msgs import Image, PointCloud2
 from dimos.msgs.std_msgs import Bool
 from dimos.navigation.frontier_exploration import wavefront_frontier_explorer
 from dimos.protocol.pubsub.impl.lcmpubsub import LCM
-from dimos.web.websocket_vis.websocket_vis_module import websocket_vis
 from dimos.robot.unitree.g1.effectors.high_level.dds_sdk import G1HighLevelSdk
+from dimos.web.websocket_vis.websocket_vis_module import websocket_vis
 
 rerun_config = {
     "pubsubs": [LCM(autoconf=True)],

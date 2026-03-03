@@ -182,7 +182,7 @@ class DockerModule:
         self._config = config
         self._args = args
         self._kwargs = kwargs
-        self._running = False       # True once container is up and RPC is reachable
+        self._running = False  # True once container is up and RPC is reachable
         self._module_started = False  # True once remote Module.start() has been called
         self.remote_name = module_class.__name__
         self._container_name = (

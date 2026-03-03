@@ -11,7 +11,7 @@
 Created `dimos/robot/unitree/g1/onboard_connection.py` that:
 - Implements the same interface as `UnitreeWebRTCConnection`
 - Uses native Unitree SDK2 for DDS-based communication
-- Supports all required methods: move, standup, liedown, streams
+- Supports all required methods: move, stand_up, lie_down, streams
 - Provides drop-in replacement for WebRTC connection
 
 ### 3. Integration with Dimos ✅
@@ -70,8 +70,8 @@ The new connection class provides:
 - Auto-stop safety after 0.2 seconds
 
 **Robot Actions:**
-- `standup() -> bool` - Stand up (mode-aware)
-- `liedown() -> bool` - Lie down/damp mode
+- `stand_up() -> bool` - Stand up (mode-aware)
+- `lie_down() -> bool` - Lie down/damp mode
 
 **Observable Streams:**
 - `odom_stream() -> Observable[Pose]` - Odometry from IMU
@@ -88,7 +88,7 @@ The new connection class provides:
 ### ✅ Implemented
 - Movement control via Twist commands
 - Auto-stop safety timer
-- Standup/liedown commands
+- Standup/lie_down commands
 - Mode support (ai/normal)
 - Odometry streaming from IMU
 - Low state streaming
@@ -160,7 +160,7 @@ WARNING: SetVelocity returned code: -1
 ```
 **Solution**:
 - Ensure robot is in correct state (standing)
-- Try standup first: `conn.standup()`
+- Try stand_up first: `conn.stand_up()`
 - Check network connectivity
 
 ## Next Steps

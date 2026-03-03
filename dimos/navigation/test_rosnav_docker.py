@@ -16,12 +16,11 @@
 
 import sys
 import types
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from dimos.msgs.geometry_msgs import PoseStamped, Quaternion, Vector3
-
 
 # ---------------------------------------------------------------------------
 # ROS stub helpers — rclpy and ROS message types are not available on the host.
@@ -144,8 +143,7 @@ def _install_ros_stubs() -> dict[str, types.ModuleType]:
 # Install stubs before importing rosnav_docker so the try/except picks them up.
 _ros_stubs = _install_ros_stubs()
 
-from dimos.navigation.rosnav_docker import _pose_to_ros  # noqa: E402
-
+from dimos.navigation.rosnav_docker import _pose_to_ros
 
 # ---------------------------------------------------------------------------
 # Tests

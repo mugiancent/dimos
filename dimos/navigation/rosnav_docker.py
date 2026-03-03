@@ -18,16 +18,15 @@ NavBot class for navigation-related functionality.
 Encapsulates ROS transport and topic remapping for Unitree robots.
 """
 
-import cv2
 from dataclasses import dataclass, field
 import logging
 from pathlib import Path
-import shutil
 import struct
 import threading
 import time
 from typing import Any
 
+import cv2
 import numpy as np
 
 # ROS message imports: available inside the ROS2 container, but may be missing on the host
@@ -72,7 +71,6 @@ from dimos.core.core import rpc
 from dimos.core.docker_runner import DockerModuleConfig
 from dimos.core.module import Module
 from dimos.core.stream import In, Out
-from dimos.utils.data import get_data
 from dimos.msgs.geometry_msgs import (
     PoseStamped,
     Quaternion,
@@ -113,9 +111,7 @@ class ROSNavConfig(DockerModuleConfig):
     docker_file: Path = Path(__file__).parent.parent.parent / "docker" / "navigation" / "Dockerfile"
     docker_build_context: Path = Path(__file__).parent.parent.parent
     docker_gpus: str | None = None
-    docker_extra_args: list[str] = field(
-        default_factory=lambda: ["--cap-add=NET_ADMIN"]
-    )
+    docker_extra_args: list[str] = field(default_factory=lambda: ["--cap-add=NET_ADMIN"])
     docker_env: dict[str, str] = field(
         default_factory=lambda: {
             "ROS_DISTRO": "humble",

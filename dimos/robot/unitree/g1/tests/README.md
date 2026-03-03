@@ -80,7 +80,7 @@ If commands fail:
 1. Check network connection: `ping 192.168.123.164`
 2. Verify interface: `ip addr show eth0`
 3. Check robot state: `python -m dimos.robot.unitree.g1.tests.test_state`
-4. Look at logs - standup commands now show detailed state transitions
+4. Look at logs - stand_up commands now show detailed state transitions
 
 ## FSM State Reference
 

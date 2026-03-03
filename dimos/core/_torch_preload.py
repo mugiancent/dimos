@@ -32,7 +32,7 @@ import importlib.util
 import os
 
 
-def dask_setup(worker):  # type: ignore[no-untyped-def]  # noqa: ANN001
+def dask_setup(worker):  # type: ignore[no-untyped-def]
     """Called by Dask at worker startup before any tasks run."""
     try:
         spec = importlib.util.find_spec("torch")

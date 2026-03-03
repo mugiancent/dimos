@@ -14,20 +14,14 @@
 
 """G1 high-level control via native Unitree SDK2 (DDS)."""
 
+from dataclasses import dataclass
+from enum import IntEnum
 import json
 import threading
 import time
-from dataclasses import dataclass
-from enum import IntEnum
 from typing import Any
 
 from reactivex.disposable import Disposable
-
-from dimos.core import In, Module, ModuleConfig, rpc
-from dimos.core.global_config import GlobalConfig
-from dimos.msgs.geometry_msgs import Twist
-from dimos.robot.unitree.g1.effectors.high_level.spec import HighLevelG1Spec
-from dimos.utils.logging_config import setup_logger
 from unitree_sdk2py.comm.motion_switcher.motion_switcher_client import (
     MotionSwitcherClient,
 )
@@ -39,6 +33,12 @@ from unitree_sdk2py.g1.loco.g1_loco_api import (
 )
 from unitree_sdk2py.g1.loco.g1_loco_client import LocoClient
 
+from dimos.core import In, Module, ModuleConfig, rpc
+from dimos.core.global_config import GlobalConfig
+from dimos.msgs.geometry_msgs import Twist
+from dimos.robot.unitree.g1.effectors.high_level.spec import HighLevelG1Spec
+from dimos.utils.logging_config import setup_logger
+
 logger = setup_logger()
 
 _LOCO_API_IDS = {
@@ -46,6 +46,7 @@ _LOCO_API_IDS = {
     "GET_FSM_MODE": ROBOT_API_ID_LOCO_GET_FSM_MODE,
     "GET_BALANCE_MODE": ROBOT_API_ID_LOCO_GET_BALANCE_MODE,
 }
+
 
 class FsmState(IntEnum):
     ZERO_TORQUE = 0
@@ -162,6 +163,7 @@ class G1HighLevelDdsSdk(Module, HighLevelG1Spec):
                     logger.warning(f"SetVelocity returned code: {code}")
                     return False
             else:
+
                 def auto_stop() -> None:
                     try:
                         logger.debug("Auto-stop timer triggered")
@@ -308,7 +310,6 @@ class G1HighLevelDdsSdk(Module, HighLevelG1Spec):
         except Exception as e:
             logger.error(f"Error getting FSM ID: {e}")
             return None
-
 
 
 __all__ = ["FsmState", "G1HighLevelDdsSdk", "G1HighLevelDdsSdkConfig"]

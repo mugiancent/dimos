@@ -19,17 +19,17 @@ STACK_ROOT="/ros2_ws/src/ros-navigation-autonomy-stack"
 UNITY_EXECUTABLE="${STACK_ROOT}/src/base_autonomy/vehicle_simulator/mesh/unity/environment/Model.x86_64"
 UNITY_MESH_DIR="${STACK_ROOT}/src/base_autonomy/vehicle_simulator/mesh/unity"
 
-# 
-# Source 
-# 
+#
+# Source
+#
 echo "[entrypoint] Sourcing ROS env..."
 source /opt/ros/${ROS_DISTRO:-humble}/setup.bash
 source /ros2_ws/install/setup.bash
 source /opt/dimos-venv/bin/activate
 
-# 
+#
 # cli helpers (when connecting to docker)
-# 
+#
 
 # rosspy
 cat > /usr/bin/rosspy <<'EOS'
@@ -166,17 +166,17 @@ cat > /usr/bin/x11_doctor <<'EOS'
 EOS
 chmod +x /usr/bin/x11_doctor
 
-# 
-# 
-# 
-# sanity checks and setup
-# 
 #
-# 
+#
+#
+# sanity checks and setup
+#
+#
+#
 
-# 
+#
 # dimos
-# 
+#
 if ! [ -d "/workspace/dimos" ]; then
     echo "the dimos codebase must be mounted to /workspace/dimos for the codebase to work"
     exit 1
@@ -187,9 +187,9 @@ pip_install_log_path="/tmp/dimos_pip_install.log"
 pip install -e /workspace/dimos &>"$pip_install_log_path" &
 PIP_INSTALL_PID=$!
 
-# 
+#
 # dds config
-# 
+#
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 if [ -z "$FASTRTPS_DEFAULT_PROFILES_FILE" ]; then
     if [ -f "/ros2_ws/config/custom_fastdds.xml" ]; then
@@ -204,9 +204,9 @@ if ! [ -f "$FASTRTPS_DEFAULT_PROFILES_FILE" ]; then
     exit 4
 fi
 
-# 
+#
 # launch helpers
-# 
+#
 # complicated because of retry system (needed as an alternative to "sleep 5" and praying its enough)
 start_ros_nav_stack() {
     setsid bash -c "
@@ -317,11 +317,11 @@ EOM
     done
 }
 
-# 
-# 
+#
+#
 # arg simplification
-# 
-# 
+#
+#
 if [ "$MODE" = "unity_sim" ] || [ -z "$MODE" ]; then
     MODE="simulation"
 fi
@@ -337,20 +337,20 @@ else
 fi
 
 
-# 
-# 
+#
+#
 # Main
-# 
-# 
+#
+#
 if [ ! -d "$STACK_ROOT" ]; then
     echo "[entrypoint] ERROR: stack root not found: $STACK_ROOT"
     exit 5
 fi
 cd "$STACK_ROOT"
 
-# 
+#
 # mode
-# 
+#
 if [ "$MODE" = "simulation" ]; then
     if [ "$USE_ROUTE_PLANNER" = "true" ]; then
         LAUNCH_FILE="system_simulation_with_route_planner.launch.py"
@@ -415,7 +415,7 @@ EOF
             robot_ip:="${UNITREE_IP:-192.168.12.1}" \
             connection_method:="${UNITREE_CONN:-LocalAP}" &
     fi
-elif [ "$MODE" = "bagfile" ]; then 
+elif [ "$MODE" = "bagfile" ]; then
     if [ "$USE_ROUTE_PLANNER" = "true" ]; then
         LAUNCH_FILE="system_bagfile_with_route_planner.launch.py"
     else
@@ -434,16 +434,16 @@ else
 fi
 
 
-# 
-# 
+#
+#
 # optional services
-# 
-# 
+#
+#
 if [ "$USE_RVIZ" = "true" ]; then
     if [ "$USE_ROUTE_PLANNER" = "true" ]; then
         RVIZ_CFG="/ros2_ws/src/ros-navigation-autonomy-stack/src/route_planner/far_planner/rviz/default.rviz"
     else
-        RVIZ_CFG="/ros2_ws/src/ros-navigation-autonomy-stack/src/base_autonomy/vehicle_simulator/rviz/vehicle_simulator.rviz" 
+        RVIZ_CFG="/ros2_ws/src/ros-navigation-autonomy-stack/src/base_autonomy/vehicle_simulator/rviz/vehicle_simulator.rviz"
     fi
     # check if file exists
     if ! [ -f "$RVIZ_CFG" ]; then
@@ -476,14 +476,14 @@ fi
 
 # start module (when being run from )
 if [ "$#" -gt 0 ]; then
-    
+
     # make sure pip install went well
     if ! wait "$PIP_INSTALL_PID"; then
         cat "$pip_install_log_path"
         echo "[entrypoint] WARNING: pip install -e failed; see $pip_install_log_path"
         exit 29
     fi
-    
+
     exec python -m dimos.core.docker_runner run "$@"
 fi
 

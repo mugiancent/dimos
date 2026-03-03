@@ -14,8 +14,8 @@
 
 """G1 high-level control via WebRTC connection."""
 
-import difflib
 from dataclasses import dataclass
+import difflib
 from typing import Any
 
 from reactivex.disposable import Disposable
@@ -63,12 +63,8 @@ _MODE_COMMANDS: dict[str, tuple[int, str]] = {
     name: (id_, description) for name, id_, description in G1_MODE_CONTROLS
 }
 
-_ARM_COMMANDS_DOC = "\n".join(
-    f'- "{name}": {desc}' for name, (_, desc) in _ARM_COMMANDS.items()
-)
-_MODE_COMMANDS_DOC = "\n".join(
-    f'- "{name}": {desc}' for name, (_, desc) in _MODE_COMMANDS.items()
-)
+_ARM_COMMANDS_DOC = "\n".join(f'- "{name}": {desc}' for name, (_, desc) in _ARM_COMMANDS.items())
+_MODE_COMMANDS_DOC = "\n".join(f'- "{name}": {desc}' for name, (_, desc) in _MODE_COMMANDS.items())
 
 
 @dataclass
@@ -163,7 +159,10 @@ class G1HighLevelWebRtc(Module, HighLevelG1Spec):
 
     @skill
     def execute_arm_command(self, command_name: str) -> str:
-        f"""Execute a Unitree G1 arm command.
+        """Execute a Unitree G1 arm command."""
+        return self._execute_g1_command(_ARM_COMMANDS, 7106, "rt/api/arm/request", command_name)
+
+    execute_arm_command.__doc__ = f"""Execute a Unitree G1 arm command.
 
         Example usage:
 
@@ -173,11 +172,13 @@ class G1HighLevelWebRtc(Module, HighLevelG1Spec):
 
         {_ARM_COMMANDS_DOC}
         """
-        return self._execute_g1_command(_ARM_COMMANDS, 7106, "rt/api/arm/request", command_name)
 
     @skill
     def execute_mode_command(self, command_name: str) -> str:
-        f"""Execute a Unitree G1 mode command.
+        """Execute a Unitree G1 mode command."""
+        return self._execute_g1_command(_MODE_COMMANDS, 7101, "rt/api/sport/request", command_name)
+
+    execute_mode_command.__doc__ = f"""Execute a Unitree G1 mode command.
 
         Example usage:
 
@@ -187,7 +188,6 @@ class G1HighLevelWebRtc(Module, HighLevelG1Spec):
 
         {_MODE_COMMANDS_DOC}
         """
-        return self._execute_g1_command(_MODE_COMMANDS, 7101, "rt/api/sport/request", command_name)
 
     # ----- private helpers -------------------------------------------------
 

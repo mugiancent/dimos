@@ -139,7 +139,9 @@ class MujocoConnection:
                 "/usr/lib/aarch64-linux-gnu/libgomp.so.1",
             ]
             existing_preloads = [p for p in preload_candidates if os.path.exists(p)]
-            ld_preload_parts = os.environ.get("LD_PRELOAD", "").split(":") if os.environ.get("LD_PRELOAD") else []
+            ld_preload_parts = (
+                os.environ.get("LD_PRELOAD", "").split(":") if os.environ.get("LD_PRELOAD") else []
+            )
             ld_preload = ":".join(filter(None, ld_preload_parts + existing_preloads))
 
             subprocess_env = {
@@ -248,10 +250,10 @@ class MujocoConnection:
         self.odom_stream.cache_clear()
         self.video_stream.cache_clear()
 
-    def standup(self) -> bool:
+    def stand_up(self) -> bool:
         return True
 
-    def liedown(self) -> bool:
+    def lie_down(self) -> bool:
         return True
 
     def get_video_frame(self) -> NDArray[Any] | None:
