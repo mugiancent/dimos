@@ -20,6 +20,7 @@ Usage:
 
 from __future__ import annotations
 
+from collections import deque
 import threading
 import time
 from typing import TYPE_CHECKING, Any
@@ -59,6 +60,32 @@ def _bar(value: float, max_val: float, width: int = 12) -> Text:
     ratio = min(value / max_val, 1.0) if max_val > 0 else 0.0
     filled = int(ratio * width)
     return Text("█" * filled + "░" * (width - filled), style=_heat(ratio))
+
+
+# Braille sparkline — each cell packs two samples (left / right column)
+_BRAILLE_BASE = 0x2800
+_LDOTS = (0x00, 0x40, 0x44, 0x46, 0x47)  # left col: 0‥4 filled rows
+_RDOTS = (0x00, 0x80, 0xA0, 0xB0, 0xB8)  # right col: 0‥4 filled rows
+_SPARK_WIDTH = 12  # characters (×2 = 24 samples of history)
+
+
+def _spark(history: deque[float], width: int = _SPARK_WIDTH) -> Text:
+    """Render a braille sparkline from CPU% history (0‥100 values)."""
+    n = width * 2
+    vals = list(history)
+    if len(vals) < n:
+        vals = [0.0] * (n - len(vals)) + vals
+    else:
+        vals = vals[-n:]
+    result = Text()
+    for i in range(0, n, 2):
+        lv = min(vals[i] / 100.0, 1.0)
+        rv = min(vals[i + 1] / 100.0, 1.0)
+        li = min(int(lv * 4 + 0.5), 4)
+        ri = min(int(rv * 4 + 0.5), 4)
+        ch = chr(_BRAILLE_BASE | _LDOTS[li] | _RDOTS[ri])
+        result.append(ch, style=_heat(max(lv, rv)))
+    return result
 
 
 def _rel_style(value: float, lo: float, hi: float) -> str:
@@ -174,6 +201,7 @@ class ResourceSpyApp(App[None]):
         self._lock = threading.Lock()
         self._latest: dict[str, Any] | None = None
         self._last_msg_time: float = 0.0
+        self._cpu_history: dict[str, deque[float]] = {}
 
     def compose(self) -> ComposeResult:
         with VerticalScroll():
@@ -236,13 +264,17 @@ class ResourceSpyApp(App[None]):
         # Build inner content: sections separated by Rules
         parts: list[RenderableType] = []
         for i, (role, rs, d, mods) in enumerate(entries):
+            if role not in self._cpu_history:
+                self._cpu_history[role] = deque(maxlen=_SPARK_WIDTH * 2)
+            if not stale:
+                self._cpu_history[role].append(d.get("cpu_percent", 0))
             if i > 0:
                 title = Text(
                     f" {role}: {mods} " if mods else f" {role} ",
                     style=dim if stale else rs,
                 )
                 parts.append(Rule(title=title, style=border_style))
-            parts.extend(self._make_lines(d, stale, ranges))
+            parts.extend(self._make_lines(d, stale, ranges, self._cpu_history[role]))
 
         # First entry title goes on the Panel itself
         first_role, first_rs, _, first_mods = entries[0]
@@ -263,6 +295,7 @@ class ResourceSpyApp(App[None]):
         d: dict[str, Any],
         stale: bool,
         ranges: dict[str, tuple[float, float]],
+        cpu_hist: deque[float] | None = None,
     ) -> list[Text]:
         dim = "#606060"
         label1_style = dim if stale else theme.WHITE
@@ -284,7 +317,9 @@ class ResourceSpyApp(App[None]):
             if key == "cpu_percent":
                 line1.append(" ")
                 if stale:
-                    line1.append("░" * 12, style=dim)
+                    line1.append("░" * _SPARK_WIDTH, style=dim)
+                elif cpu_hist is not None and len(cpu_hist) > 0:
+                    line1.append_text(_spark(cpu_hist))
                 else:
                     line1.append_text(_bar(val, 100))
             line1.append("  ")
@@ -369,6 +404,8 @@ _PREVIEW_DATA: dict[str, Any] = {
 
 def _preview() -> None:
     """Print a static preview with fake data (no LCM needed)."""
+    import math
+
     from rich.console import Console
 
     data = _PREVIEW_DATA
@@ -385,10 +422,14 @@ def _preview() -> None:
 
     parts: list[RenderableType] = []
     for i, (role, rs, d, mods) in enumerate(entries):
+        cpu = d.get("cpu_percent", 0)
+        hist: deque[float] = deque(maxlen=_SPARK_WIDTH * 2)
+        for j in range(_SPARK_WIDTH * 2):
+            hist.append(max(0, min(100, cpu + 20 * math.sin(j * 0.6))))
         if i > 0:
             title = Text(f" {role}: {mods} " if mods else f" {role} ", style=rs)
             parts.append(Rule(title=title, style=border_style))
-        parts.extend(ResourceSpyApp._make_lines(d, stale=False, ranges=ranges))
+        parts.extend(ResourceSpyApp._make_lines(d, stale=False, ranges=ranges, cpu_hist=hist))
 
     first_role, first_rs, _, first_mods = entries[0]
     panel_title = Text(f" {first_role} ", style=first_rs)
