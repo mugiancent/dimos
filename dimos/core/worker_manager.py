@@ -15,16 +15,13 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from dimos.core.global_config import GlobalConfig
 from dimos.core.module import ModuleBase
 from dimos.core.rpc_client import RPCClient
 from dimos.core.worker import Worker
 from dimos.utils.logging_config import setup_logger
-
-if TYPE_CHECKING:
-    from dimos.core.module import ModuleT
 
 logger = setup_logger()
 
