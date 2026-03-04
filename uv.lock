@@ -2126,7 +2126,7 @@ requires-dist = [
     { name = "types-tensorflow", marker = "extra == 'dev'", specifier = ">=2.18.0.20251008,<3" },
     { name = "types-tqdm", marker = "extra == 'dev'", specifier = ">=4.67.0.20250809,<5" },
     { name = "ultralytics", marker = "extra == 'perception'", specifier = ">=8.3.70" },
-    { name = "unitree-sdk2py-dimos", marker = "extra == 'unitree'", specifier = ">=1.0.2" },
+    { name = "unitree-sdk2py-dimos", marker = "extra == 'unitree'", specifier = ">=1.0.3" },
     { name = "unitree-webrtc-connect-leshy", marker = "extra == 'unitree'", specifier = ">=2.0.7" },
     { name = "uvicorn", marker = "extra == 'web'", specifier = ">=0.34.0" },
     { name = "watchdog", marker = "extra == 'dev'", specifier = ">=3.0.0" },
@@ -10128,7 +10128,7 @@ wheels = [
 
 [[package]]
 name = "unitree-sdk2py-dimos"
-version = "1.0.2"
+version = "1.0.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cyclonedds" },
@@ -10136,9 +10136,9 @@ dependencies = [
     { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "opencv-python" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c4/1e/4f334dc2cd11c31c9726bb8535e956ec07e795c2d8778c691585dc11567b/unitree_sdk2py_dimos-1.0.2.tar.gz", hash = "sha256:904644326ec35216a705a036b7d321ef6014c0774b9aba0790c770930909cbe2", size = 39585, upload-time = "2026-02-28T03:45:26.981Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/93/d2/8c927709a432e6003a7ffdb434c2a3570c1b4ed97c9a0b7b85313e32f6bb/unitree_sdk2py_dimos-1.0.3.tar.gz", hash = "sha256:d0076b9501849a8f144dd076ffb3894c5c804c87cdad7521095c2bc893049438", size = 48758, upload-time = "2026-03-03T21:19:32.8Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/9a/4a/bee19c51a83ecb71a824c11db64c97986125218d0ec7896a5ac7c900eb82/unitree_sdk2py_dimos-1.0.2-py3-none-any.whl", hash = "sha256:7dc80bc1a9ec3e08ba7b8d1613f52b017ca6d437863325c4a2ad95616585df65", size = 90521, upload-time = "2026-02-28T03:45:25.603Z" },
+    { url = "https://files.pythonhosted.org/packages/39/69/76b879edbf5eab1cb200bf818b87a5943effe441722429ab940ea38a6887/unitree_sdk2py_dimos-1.0.3-py3-none-any.whl", hash = "sha256:8057cad5de5877757bc586b2ba5ddbe84522ce4c8c3d624464ef975cafa5daec", size = 110245, upload-time = "2026-03-03T21:19:31.692Z" },
 ]
 
 [[package]]
