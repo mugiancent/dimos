@@ -23,8 +23,13 @@ from pathlib import Path
 
 from dimos.memory.impl.sqlite import SqliteStore
 from dimos.memory.ingest import ingest
-from dimos.memory.transformer import EmbeddingTransformer, QualityWindowTransformer
+from dimos.memory.transformer import (
+    CaptionTransformer,
+    EmbeddingTransformer,
+    QualityWindowTransformer,
+)
 from dimos.models.embedding.clip import CLIPModel
+from dimos.models.vl.florence import Florence2Model
 from dimos.msgs.sensor_msgs.Image import Image
 from dimos.utils.testing import TimedSensorReplay
 
@@ -82,17 +87,25 @@ queries = [
     "large room",
 ]
 
+print("\nLoading Florence2 for captioning...")
+captioner = Florence2Model()
+captioner.start()
+
+caption_xf = CaptionTransformer(captioner)
+
 for query_text in queries:
     print(f"\nQuery: '{query_text}'")
     query_emb = clip.embed_text(query_text)
-    results = embeddings.search_embedding(query_emb, k=5).fetch()
+    search = embeddings.search_embedding(query_emb, k=5)
+
+    captions = search.transform(caption_xf).fetch()
+    images = search.fetch()
 
     slug = query_text.replace(" ", "_")[:30]
-    for rank, result in enumerate(results):
-        # search_embedding auto-projects to source images
-        fname = OUT_DIR / f"{slug}_{rank + 1}_id{result.id}_ts{result.ts:.0f}.jpg"
-        result.data.save(str(fname))
-        print(f"  [{rank + 1}] id={result.id} ts={result.ts:.2f} → {fname.name}")
+    for rank, (cap, img) in enumerate(zip(captions, images, strict=False)):
+        fname = OUT_DIR / f"{slug}_{rank + 1}_id{img.id}_ts{img.ts:.0f}.jpg"
+        img.data.save(str(fname))
+        print(f"  [{rank + 1}] id={img.id} ts={img.ts:.2f} — {cap.data}")
 
 session.close()
 store.close()

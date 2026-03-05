@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from dimos.models.embedding.base import Embedding, EmbeddingModel
+    from dimos.models.vl.base import Captioner
 
     from .stream import Stream
     from .types import Observation
@@ -151,6 +152,34 @@ class QualityWindowTransformer(Transformer[T, T]):
         if score > self._best_score:
             self._best_score = score
             self._best_obs = obs
+
+
+class CaptionTransformer(Transformer[Any, str]):
+    """Wraps a Captioner (or VlModel) to produce text captions from images.
+
+    When stored, the output stream becomes a TextStream with FTS index.
+    Uses caption_batch() during backfill for efficiency.
+    """
+
+    supports_backfill: bool = True
+    supports_live: bool = True
+
+    def __init__(self, model: Captioner) -> None:
+        self.model = model
+        self.output_type: type | None = str
+
+    def process(self, source: Stream[Any], target: Stream[str]) -> None:
+        for page in source.fetch_pages():
+            images = [obs.data for obs in page]
+            if not images:
+                continue
+            captions = self.model.caption_batch(*images)
+            for obs, cap in zip(page, captions, strict=True):
+                target.append(cap, ts=obs.ts, pose=obs.pose, tags=obs.tags, parent_id=obs.id)
+
+    def on_append(self, obs: Observation, target: Stream[str]) -> None:
+        caption = self.model.caption(obs.data)
+        target.append(caption, ts=obs.ts, pose=obs.pose, tags=obs.tags, parent_id=obs.id)
 
 
 class EmbeddingTransformer(Transformer[Any, "Embedding"]):
