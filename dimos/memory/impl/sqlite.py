@@ -53,6 +53,7 @@ from dimos.memory.types import (
     EmbeddingObservation,
     EmbeddingSearchFilter,
     Filter,
+    LineageFilter,
     NearFilter,
     Observation,
     StreamInfo,
@@ -148,7 +149,80 @@ def _compile_filter(f: Filter, table: str) -> tuple[str, list[Any]]:
         return "1=1", []
     if isinstance(f, TextSearchFilter):
         return "1=1", []
+    if isinstance(f, LineageFilter):
+        inner_sql, params = _compile_ids(f.source_query, f.source_table, select_col="parent_id")
+        for hop in f.hops:
+            inner_sql = f"SELECT parent_id FROM {hop} WHERE id IN ({inner_sql})"
+        return f"{table}.id IN ({inner_sql})", params
     raise TypeError(f"Unknown filter type: {type(f)}")
+
+
+def _compile_ids(
+    query: StreamQuery, table: str, *, select_col: str = "id"
+) -> tuple[str, list[Any]]:
+    """Compile a StreamQuery to ``SELECT {col} FROM {table} WHERE ...``.
+
+    Unlike ``_compile_query``, this handles *all* filter types as SQL — including
+    EmbeddingSearchFilter and TextSearchFilter as inline subqueries — so that the
+    result can be nested inside another query (used by LineageFilter).
+    """
+    where_parts: list[str] = []
+    params: list[Any] = []
+    joins: list[str] = []
+
+    for f in query.filters:
+        if isinstance(f, EmbeddingSearchFilter):
+            where_parts.append(
+                f"{table}.id IN (SELECT rowid FROM {table}_vec WHERE embedding MATCH ? AND k = ?)"
+            )
+            params.extend([json.dumps(f.query), f.k])
+        elif isinstance(f, TextSearchFilter):
+            fts_sub = f"SELECT rowid FROM {table}_fts WHERE content MATCH ?"
+            fts_params: list[Any] = [f.text]
+            if f.k is not None:
+                fts_sub += " LIMIT ?"
+                fts_params.append(f.k)
+            where_parts.append(f"{table}.id IN ({fts_sub})")
+            params.extend(fts_params)
+        elif isinstance(f, NearFilter):
+            joins.append(f"JOIN {table}_rtree AS r ON r.id = {table}.id")
+            pose_parts = _decompose_pose(f.pose)
+            if pose_parts is not None:
+                x, y, z = pose_parts[0], pose_parts[1], pose_parts[2]
+            else:
+                x, y, z = 0.0, 0.0, 0.0
+            where_parts.append(
+                "r.min_x >= ? AND r.max_x <= ? AND "
+                "r.min_y >= ? AND r.max_y <= ? AND "
+                "r.min_z >= ? AND r.max_z <= ?"
+            )
+            params.extend(
+                [x - f.radius, x + f.radius, y - f.radius, y + f.radius, z - f.radius, z + f.radius]
+            )
+        else:
+            # Simple filters + LineageFilter → delegate to _compile_filter
+            sql_frag, p = _compile_filter(f, table)
+            where_parts.append(sql_frag)
+            params.extend(p)
+
+    where = " AND ".join(where_parts) if where_parts else "1=1"
+    join_clause = " ".join(joins)
+
+    sql = f"SELECT {table}.{select_col} FROM {table}"
+    if join_clause:
+        sql += f" {join_clause}"
+    sql += f" WHERE {where}"
+
+    if query.order_field:
+        sql += f" ORDER BY {query.order_field}"
+        if query.order_desc:
+            sql += " DESC"
+    if query.limit_val is not None:
+        sql += f" LIMIT {query.limit_val}"
+    if query.offset_val is not None:
+        sql += f" OFFSET {query.offset_val}"
+
+    return sql, params
 
 
 def _has_near_filter(query: StreamQuery) -> NearFilter | None:
@@ -658,6 +732,33 @@ class SqliteSession(Session):
         self._conn = conn
         self._streams: dict[str, Stream[Any]] = {}
         self._ensure_meta_table()
+
+    def resolve_lineage_chain(self, source: str, target: str) -> tuple[str, ...]:
+        """Walk ``_streams.parent_stream`` from *source* toward *target*.
+
+        Returns intermediate table names (empty tuple for direct parent).
+        """
+        current = source
+        intermediates: list[str] = []
+        visited = {source}
+
+        while True:
+            row = self._conn.execute(
+                "SELECT parent_stream FROM _streams WHERE name = ?", (current,)
+            ).fetchone()
+            if not row or not row[0]:
+                raise ValueError(f"No lineage path from {source!r} to {target!r}")
+
+            parent_name: str = row[0]
+            if parent_name == target:
+                return tuple(intermediates)
+
+            if parent_name in visited:
+                raise ValueError(f"Cycle detected in lineage chain at {parent_name!r}")
+
+            visited.add(parent_name)
+            intermediates.append(parent_name)
+            current = parent_name
 
     def _ensure_meta_table(self) -> None:
         self._conn.execute(

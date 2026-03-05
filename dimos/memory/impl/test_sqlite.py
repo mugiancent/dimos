@@ -467,6 +467,132 @@ class TestIteration:
         assert all(_img_close(a, b) for a, b in zip(items, images[:3], strict=True))
 
 
+class TestProjectTo:
+    def test_single_hop(self, session: SqliteSession, images: list[Image]) -> None:
+        """project_to follows parent_id one hop: embeddings → images."""
+
+        class FakeEmbedder(EmbeddingModel):
+            device = "cpu"
+
+            def embed(self, *imgs: Image) -> Embedding | list[Embedding]:  # type: ignore[override]
+                results = []
+                for img in imgs:
+                    val = float(img.data.mean()) / 255.0
+                    results.append(Embedding(np.array([val, 1.0 - val, 0.0], dtype=np.float32)))
+                return results if len(results) > 1 else results[0]
+
+            def embed_text(self, *texts: str) -> Embedding | list[Embedding]:
+                raise NotImplementedError
+
+        imgs = session.stream("pt_images", Image)
+        imgs.append(images[0], ts=1.0)
+        imgs.append(images[1], ts=2.0)
+        imgs.append(images[2], ts=3.0)
+
+        embs = imgs.transform(EmbeddingTransformer(FakeEmbedder())).store("pt_embs")
+        assert embs.count() == 3
+
+        # Search for top-2, then project back to images
+        results = embs.search_embedding([0.5, 0.5, 0.0], k=2).project_to(imgs)
+        projected = results.fetch()
+        assert len(projected) == 2
+        # Projected observations have image data, not embeddings
+        for obs in projected:
+            assert (
+                _img_close(obs.data, images[0])
+                or _img_close(obs.data, images[1])
+                or _img_close(obs.data, images[2])
+            )
+
+    def test_project_to_with_chained_filter(
+        self, session: SqliteSession, images: list[Image]
+    ) -> None:
+        """project_to result is a chainable Stream — further filters work."""
+
+        class FakeEmbedder(EmbeddingModel):
+            device = "cpu"
+
+            def embed(self, *imgs: Image) -> Embedding | list[Embedding]:  # type: ignore[override]
+                results = []
+                for img in imgs:
+                    val = float(img.data.mean()) / 255.0
+                    results.append(Embedding(np.array([val, 1.0 - val, 0.0], dtype=np.float32)))
+                return results if len(results) > 1 else results[0]
+
+            def embed_text(self, *texts: str) -> Embedding | list[Embedding]:
+                raise NotImplementedError
+
+        imgs = session.stream("ptc_images", Image)
+        imgs.append(images[0], ts=1.0)
+        imgs.append(images[1], ts=5.0)
+        imgs.append(images[2], ts=10.0)
+
+        embs = imgs.transform(EmbeddingTransformer(FakeEmbedder())).store("ptc_embs")
+
+        # Project all embeddings to images, then filter by time
+        projected = embs.project_to(imgs).after(3.0)
+        results = projected.fetch()
+        # Only images with ts > 3.0 should remain
+        assert all(r.ts is not None and r.ts > 3.0 for r in results)
+
+    def test_two_hop(self, session: SqliteSession, images: list[Image]) -> None:
+        """project_to walks multi-hop lineage: embeddings → filtered → raw."""
+
+        class FakeEmbedder(EmbeddingModel):
+            device = "cpu"
+
+            def embed(self, *imgs: Image) -> Embedding | list[Embedding]:  # type: ignore[override]
+                results = []
+                for img in imgs:
+                    val = float(img.data.mean()) / 255.0
+                    results.append(Embedding(np.array([val, 1.0 - val, 0.0], dtype=np.float32)))
+                return results if len(results) > 1 else results[0]
+
+            def embed_text(self, *texts: str) -> Embedding | list[Embedding]:
+                raise NotImplementedError
+
+        raw = session.stream("th_raw", Image)
+        raw.append(images[0], ts=1.0)
+        raw.append(images[1], ts=2.0)
+        raw.append(images[2], ts=3.0)
+
+        # Passthrough transform to create an intermediate stream
+        mid = raw.transform(lambda img: img).store("th_mid", Image)
+        assert mid.count() == 3
+
+        embs = mid.transform(EmbeddingTransformer(FakeEmbedder())).store("th_embs")
+        assert embs.count() == 3
+
+        # Two-hop: embeddings → mid → raw
+        projected = embs.search_embedding([0.5, 0.5, 0.0], k=2).project_to(raw)
+        results = projected.fetch()
+        assert len(results) == 2
+
+    def test_count_on_projected(self, session: SqliteSession, images: list[Image]) -> None:
+        """count() works on projected streams."""
+
+        class FakeEmbedder(EmbeddingModel):
+            device = "cpu"
+
+            def embed(self, *imgs: Image) -> Embedding | list[Embedding]:  # type: ignore[override]
+                results = []
+                for img in imgs:
+                    val = float(img.data.mean()) / 255.0
+                    results.append(Embedding(np.array([val, 1.0 - val, 0.0], dtype=np.float32)))
+                return results if len(results) > 1 else results[0]
+
+            def embed_text(self, *texts: str) -> Embedding | list[Embedding]:
+                raise NotImplementedError
+
+        imgs = session.stream("ptcnt_images", Image)
+        imgs.append(images[0], ts=1.0)
+        imgs.append(images[1], ts=2.0)
+
+        embs = imgs.transform(EmbeddingTransformer(FakeEmbedder())).store("ptcnt_embs")
+        projected = embs.search_embedding([0.5, 0.5, 0.0], k=1).project_to(imgs)
+        assert projected.count() == 1
+
+
 class TestStoreReopen:
     def test_data_persists(self, tmp_path: object, images: list[Image]) -> None:
         from pathlib import Path

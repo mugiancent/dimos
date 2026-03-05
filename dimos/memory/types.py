@@ -135,6 +135,19 @@ class TextSearchFilter:
     k: int | None
 
 
+@dataclass(frozen=True)
+class LineageFilter:
+    """Filter to rows that are ancestors of observations in another stream.
+
+    Used by ``project_to`` — compiles to a nested SQL subquery that walks the
+    ``parent_id`` chain from *source_table* through *hops* to the target.
+    """
+
+    source_table: str
+    source_query: StreamQuery
+    hops: tuple[str, ...]  # intermediate tables between source and target
+
+
 Filter: TypeAlias = (
     AfterFilter
     | BeforeFilter
@@ -144,6 +157,7 @@ Filter: TypeAlias = (
     | TagsFilter
     | EmbeddingSearchFilter
     | TextSearchFilter
+    | LineageFilter
 )
 
 

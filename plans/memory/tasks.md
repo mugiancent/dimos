@@ -28,7 +28,11 @@ The annotation is wrong for mypy though. Consider `-> Self` (from `typing_extens
 
 This is a prerequisite for `.join()` and stream-level lineage discovery.
 
-### 4. Implement `.join()` — cross-stream lineage
+### 4. ~~Implement `.project_to()` — cross-stream lineage~~ ✅
+
+Implemented. `project_to(target)` adds a `LineageFilter` to the target stream (same `_with_filter` mechanism as `.after()`, `.near()`, etc.). The filter compiles to a SQL subquery walking the `parent_id` chain. Multi-hop lineage is resolved via `_streams.parent_stream` registry. Result is a fully chainable `Stream`.
+
+### 4b. Implement `.join()` — cross-stream lineage returning pairs
 
 `api.md` specifies:
 ```python
@@ -36,19 +40,9 @@ for det, img in detections.after(t).join(images):
     print(f"Detected {det.data} in image at {img.pose}")
 ```
 
-Currently only a `project_to()` stub exists that raises `NotImplementedError`.
+Unlike `project_to()` which returns a `Stream`, `join()` yields `tuple[Observation, Observation]` pairs. This is a terminal operation (not chainable) since the return type is pairs, not observations.
 
-**Design** (from `sqlite.md`):
-```sql
-SELECT c.*, p.*
-FROM {self}_meta c
-JOIN {target}_meta p ON c.parent_id = p.id
-WHERE c.id IN (/* current filtered set */)
-```
-
-Both sides return `Observation` with lazy `.data`. Yields `tuple[Observation, Observation]`.
-
-**Depends on**: Task 3 (parent_stream in registry) for discovering which stream to join against. Alternatively, `.join(target)` takes the target explicitly, so parent_stream metadata is nice-to-have but not strictly required — `parent_id` column is sufficient.
+**Depends on**: ~~Task 3~~ Done — `parent_stream` is now written by `materialize_transform()` and read by `resolve_lineage_chain()`.
 
 ### 5. Filtered `.appended` — predicate-filtered reactive subscriptions
 

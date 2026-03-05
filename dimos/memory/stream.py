@@ -30,6 +30,7 @@ from .types import (
     EmbeddingObservation,
     EmbeddingSearchFilter,
     Filter,
+    LineageFilter,
     NearFilter,
     Observation,
     StreamQuery,
@@ -220,8 +221,30 @@ class Stream(Generic[T]):
 
     # ── Cross-stream lineage ──────────────────────────────────────────
 
-    def project_to(self, target: Stream[Any]) -> Stream[Any]:
-        raise NotImplementedError("project_to requires a stored stream with lineage")
+    def project_to(self, target: Stream[R]) -> Stream[R]:
+        """Follow parent_id lineage to project observations onto the target stream.
+
+        Returns a filtered *target* Stream containing only observations that are
+        ancestors of the current (source) query results.  The result is a normal
+        Stream — all chaining, pagination, and lazy loading work as usual.
+        """
+        backend = self._require_backend()
+        target_backend = target._require_backend()
+        session = self._session
+        if session is None:
+            raise TypeError("project_to requires a session-backed stream")
+
+        source_table = backend.stream_name
+        target_table = target_backend.stream_name
+        hops = session.resolve_lineage_chain(source_table, target_table)
+
+        return target._with_filter(
+            LineageFilter(
+                source_table=source_table,
+                source_query=self._query,
+                hops=hops,
+            )
+        )
 
     # ── Iteration ─────────────────────────────────────────────────────
 
@@ -295,7 +318,9 @@ class EmbeddingStream(Stream[T]):
             vec = list(query)
         clone = self._with_filter(EmbeddingSearchFilter(vec, k))
         # Preserve EmbeddingStream type
-        es: EmbeddingStream[T] = EmbeddingStream(backend=clone._backend, query=clone._query)
+        es: EmbeddingStream[T] = EmbeddingStream(
+            backend=clone._backend, query=clone._query, session=clone._session
+        )
         return es
 
     def fetch(self) -> list[EmbeddingObservation]:  # type: ignore[override]
@@ -336,7 +361,9 @@ class TextStream(Stream[T]):
 
     def search_text(self, text: str, *, k: int | None = None) -> TextStream[T]:
         clone = self._with_filter(TextSearchFilter(text, k))
-        ts: TextStream[T] = TextStream(backend=clone._backend, query=clone._query)
+        ts: TextStream[T] = TextStream(
+            backend=clone._backend, query=clone._query, session=clone._session
+        )
         return ts
 
 

@@ -76,6 +76,15 @@ class Session(ABC):
         """Create a stored stream from a transform pipeline."""
 
     @abstractmethod
+    def resolve_lineage_chain(self, source: str, target: str) -> tuple[str, ...]:
+        """Return intermediate tables in the parent_id chain from source to target.
+
+        Single hop (source directly parents target) returns ``()``.
+        Two hops (source → mid → target) returns ``("mid",)``.
+        Raises ``ValueError`` if no lineage path exists.
+        """
+
+    @abstractmethod
     def close(self) -> None: ...
 
     def __enter__(self) -> Session:
