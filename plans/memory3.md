@@ -12,10 +12,10 @@ PR #1080 introduced `TimeSeriesStore[T]` with pluggable backends. Paul's review 
 dimos/memory2/
     __init__.py              # public exports
     _sql.py                  # _validate_identifier(), SQL helpers
-    types.py                 # ObservationRef, ObservationMeta, ObservationRow, Lineage, Pose (spec's own Pose)
+    types.py                 # ObservationRef, ObservationMeta, ObservationRow, Lineage, StreamInfo
     db.py                    # DB (Resource lifecycle, SqliteDB)
     session.py               # Session (connection, stream factory, correlate)
-    stream.py                # Stream (append + QueryableObservationSet)
+    stream.py                # StreamBase, BlobStream, EmbeddingStream, TextStream
     observation_set.py       # ObservationSet (lazy, re-queryable, predicate/ref-table backed)
     query.py                 # Query (filter/search/rank/limit → fetch/fetch_set)
     test_memory2.py          # tests
@@ -28,52 +28,26 @@ dimos/memory2/
 1. **`types.py`** — Data classes
 
 ```python
+
 @dataclass(frozen=True)
 class ObservationRef:
     stream: str
-    id: str
-
-@dataclass
-class Pose:
-    xyz: tuple[float, float, float]
-    quat_xyzw: tuple[float, float, float, float] | None = None
-
-@dataclass
-class ObservationMeta:
-    ref: ObservationRef
-    ts_start: float | None = None
-    ts_end: float | None = None
-    robot_id: str | None = None
-    frame_id: str | None = None
-    pose: Pose | None = None
-    pose_source: str | None = None
-    pose_confidence: float | None = None
-    payload_codec: str | None = None
-    payload_size_bytes: int | None = None
-    tags: dict[str, Any] = field(default_factory=dict)
+    rowid: int
 
 @dataclass
 class ObservationRow:
     ref: ObservationRef
-    ts_start: float | None = None
-    ts_end: float | None = None
-    pose: Pose | None = None
+    ts: float | None = None
+    pose: PoseLike | None = None
     scores: dict[str, float] = field(default_factory=dict)
-    metadata: dict[str, Any] = field(default_factory=dict)
+    tags: dict[str, Any] = field(default_factory=dict)
 
 @dataclass
 class Lineage:
-    parents: list[str] = field(default_factory=list)
-    parent_refs: list[ObservationRef] = field(default_factory=list)
-    query_repr: str | None = None
+    parent_ref: ObservationRef | None = None  # single parent via parent_stream + parent_rowid
 ```
 
-Note: `Pose` here is the spec's lightweight tuple-based pose for storage/filtering. Conversion to/from DimOS `dimos.msgs.geometry_msgs.Pose` via helper:
-
-```python
-def to_storage_pose(p: DimOSPose | DimOSPoseStamped | Pose) -> Pose: ...
-def to_dimos_pose(p: Pose) -> DimOSPose: ...
-```
+Poses use DimOS's existing `PoseLike` type alias (`Pose | PoseStamped | Point | PointStamped`). Internally, `append()` extracts `(x, y, z, qx, qy, qz, qw)` floats for SQL storage; `load` reconstructs a `dimos.msgs.geometry_msgs.Pose` from stored floats. No custom Pose type.
 
 2. **`_sql.py`** — SQL helpers
 
@@ -101,11 +75,21 @@ SqliteDB internals:
 4. **`session.py`** — Session + SqliteSession
 
 ```python
+@dataclass
+class StreamInfo:
+    name: str
+    payload_type: type
+    count: int
+
 class Session(ABC):
-    def stream(self, name: str, payload_type: type,
-               capabilities: set[str], retention: str = "run",
-               config: dict | None = None) -> Stream: ...
-    def list_streams(self) -> list[str]: ...
+    def stream(self, name: str, payload_type: type, *,
+               retention: str = "run") -> BlobStream: ...
+    def embedding_stream(self, name: str, payload_type: type, *,
+                         dim: int, retention: str = "run") -> EmbeddingStream: ...
+    def text_stream(self, name: str, payload_type: type, *,
+                    tokenizer: str = "unicode61",
+                    retention: str = "run") -> TextStream: ...
+    def list_streams(self) -> list[StreamInfo]: ...
     def execute(self, sql: str, params=()) -> list: ...
     def close(self) -> None: ...
     def __enter__ / __exit__
@@ -113,34 +97,48 @@ class Session(ABC):
 
 SqliteSession:
 - Holds one `sqlite3.Connection`
-- `stream()`: creates tables if needed (see schema below), caches Stream instances
+- `stream()` / `embedding_stream()` / `text_stream()`: creates tables if needed (see schema below), caches StreamBase instances
 - Registers stream metadata in a `_streams` registry table
 
 ### Phase 2: Stream + Query + ObservationSet
 
-5. **`stream.py`** — Stream (implements `QueryableObservationSet`)
+5. **`stream.py`** — Stream hierarchy (subclassed by data type)
 
 ```python
-class Stream(Generic[T]):
+class StreamBase(ABC, Generic[T]):
+    """Abstract base: meta + payload + spatial index. No text/vector indexes."""
     # Write
     def append(self, payload: T, **meta: Any) -> ObservationRef: ...
     def append_many(self, payloads, metas) -> list[ObservationRef]: ...
 
-    # QueryableObservationSet protocol
+    # Read
     def query(self) -> Query[T]: ...
     def load(self, ref: ObservationRef) -> T: ...
     def load_many(self, refs: list[ObservationRef], *, batch_size=32) -> list[T]: ...
     def iter_meta(self, *, page_size=128) -> Iterator[list[ObservationRow]]: ...
     def count(self) -> int: ...
-    def capabilities(self) -> set[str]: ...
 
     # Introspection
     def meta(self, ref: ObservationRef) -> ObservationMeta: ...
     def info(self) -> dict[str, Any]: ...
     def stats(self) -> dict[str, Any]: ...
+
+class BlobStream(StreamBase[T]):
+    """Concrete stream for arbitrary LCM-serializable payloads. No special indexes."""
+
+class EmbeddingStream(StreamBase[T]):
+    """Stream with a vec0 vector index. append() also inserts into _vec table."""
+    def __init__(self, ..., *, dim: int): ...
+    def vector(self, ref: ObservationRef) -> list[float] | None: ...
+    # search_embedding() on Query is valid only for EmbeddingStream
+
+class TextStream(StreamBase[T]):
+    """Stream with an FTS5 index. append() also inserts into _fts table."""
+    def __init__(self, ..., *, tokenizer: str = "unicode61"): ...
+    # search_text() on Query is valid only for TextStream
 ```
 
-`append()` generates a UUID for `ObservationRef.id`, pickles payload into BLOB, inserts metadata row + R*Tree entry (if pose provided) + FTS entry (if text capable) + vector entry (if embedding capable).
+`append()` inserts a metadata row (SQLite auto-assigns `rowid`), serializes payload via `lcm_encode()` into `_payload` BLOB, and inserts an R*Tree entry if pose is provided. `EmbeddingStream.append()` also inserts into the `_vec` table; `TextStream.append()` also inserts into the `_fts` table. Returns `ObservationRef(stream, rowid)`. `load()` deserializes via `lcm_decode()` using the stream's `payload_type`.
 
 6. **`query.py`** — Query (chainable, capability-aware)
 
@@ -150,17 +148,19 @@ class Query(Generic[T]):
     def filter_time(self, t1: float, t2: float) -> Query[T]: ...
     def filter_before(self, t: float) -> Query[T]: ...
     def filter_after(self, t: float) -> Query[T]: ...
-    def filter_near(self, pose: Pose, radius: float, *,
+    def filter_near(self, pose: PoseLike, radius: float, *,
                     include_unlocalized: bool = False) -> Query[T]: ...
     def filter_tags(self, **tags: Any) -> Query[T]: ...
     def filter_refs(self, refs: list[ObservationRef]) -> Query[T]: ...
+    def at(self, t: float, *, tolerance: float = 1.0) -> Query[T]: ...
 
     # Candidate generation
     def search_text(self, text: str, *, candidate_k: int | None = None) -> Query[T]: ...
     def search_embedding(self, vector: list[float], *, candidate_k: int) -> Query[T]: ...
 
-    # Ranking + limit
+    # Ranking + ordering + limit
     def rank(self, **weights: float) -> Query[T]: ...
+    def order_by(self, field: str, *, desc: bool = False) -> Query[T]: ...
     def limit(self, k: int) -> Query[T]: ...
 
     # Terminals
@@ -171,7 +171,9 @@ class Query(Generic[T]):
 ```
 
 Query internals:
-- Accumulates filter predicates, search ops, rank spec, limit
+- Accumulates filter predicates, search ops, rank spec, ordering, limit
+- `at(t, tolerance)` → sugar for `filter_time(t - tol, t + tol)` + `ORDER BY ABS(ts_start - t) LIMIT 1`
+- `order_by(field, desc)` → appends `ORDER BY` clause; valid fields: `ts_start`, `ts_end`
 - `fetch()`: generates SQL, executes, returns rows
 - `fetch_set()`: creates an ObservationSet (predicate-backed or ref-table-backed)
 - search_embedding → sqlite-vec `MATCH`, writes top-k to temp table → ref-table-backed
@@ -194,11 +196,16 @@ class ObservationSet(Generic[T]):
     def one(self) -> ObservationRow: ...
     def fetch_page(self, *, limit=128, offset=0) -> list[ObservationRow]: ...
     def count(self) -> int: ...
-    def capabilities(self) -> set[str]: ...
     def lineage(self) -> Lineage: ...
 
     # Cross-stream
-    def project_to(self, stream: Stream) -> ObservationSet: ...
+    def project_to(self, stream: StreamBase) -> ObservationSet: ...
+
+    # Cleanup (ref-table-backed only; no-op for predicate-backed)
+    def close(self) -> None: ...
+    def __enter__(self) -> Self: ...
+    def __exit__(self, *exc) -> None: ...
+    def __del__(self) -> None: ...  # best-effort fallback
 ```
 
 Internal backing (spec §8):
@@ -221,6 +228,9 @@ class RefTableBacking:
 - `.query()` on predicate-backed → adds more predicates
 - `.query()` on ref-table-backed → filters within that temp table
 - `project_to()` → joins backing refs via lineage parent_refs to target stream
+- `close()` drops the temp table for ref-table-backed sets; no-op for predicate-backed
+- Supports context manager (`with`) for deterministic cleanup; `__del__` as fallback
+- SQLite connection close is the final safety net for any leaked temp tables
 
 ### Phase 3: Later (not in first PR)
 
@@ -236,29 +246,22 @@ class RefTableBacking:
 
 ```sql
 CREATE TABLE {name}_meta (
-    id TEXT PRIMARY KEY,          -- UUID, part of ObservationRef
-    ts_start REAL,
-    ts_end REAL,
-    robot_id TEXT,
-    frame_id TEXT,
+    rowid INTEGER PRIMARY KEY,    -- auto-assigned, used by R*Tree/FTS/vec0
+    ts REAL,
     pose_x REAL, pose_y REAL, pose_z REAL,
     pose_qx REAL, pose_qy REAL, pose_qz REAL, pose_qw REAL,
-    pose_source TEXT,
-    pose_confidence REAL,
-    payload_codec TEXT,
-    payload_size_bytes INTEGER,
-    tags TEXT,                     -- JSON
+    tags TEXT,                     -- JSON (robot_id, frame_id, etc.)
     parent_stream TEXT,            -- lineage: source stream name
-    parent_id TEXT                 -- lineage: source observation id
+    parent_rowid INTEGER           -- lineage: source observation rowid
 );
-CREATE INDEX idx_{name}_meta_ts ON {name}_meta(ts_start);
+CREATE INDEX idx_{name}_meta_ts ON {name}_meta(ts);
 ```
 
 ### Payload table: `{name}_payload`
 
 ```sql
 CREATE TABLE {name}_payload (
-    id TEXT PRIMARY KEY,          -- matches _meta.id
+    rowid INTEGER PRIMARY KEY,    -- matches _meta.rowid
     data BLOB NOT NULL
 );
 ```
@@ -270,28 +273,29 @@ Separate from meta so queries never touch payload BLOBs.
 ```sql
 CREATE VIRTUAL TABLE {name}_rtree USING rtree(
     rowid,                        -- matches _meta rowid
-    min_t, max_t,                 -- ts_start, ts_end
-    min_x, max_x,
-    min_y, max_y,
-    min_z, max_z
+    min_t, max_t,                 -- both set to ts (point, not range)
+    min_x, max_x,                 -- both set to pose_x
+    min_y, max_y,                 -- both set to pose_y
+    min_z, max_z                  -- both set to pose_z
 );
 ```
 
-Only rows with pose get R*Tree entries (spec §2.6: unlocalized != everywhere).
-R*Tree `rowid` linked to meta via a mapping or using meta's rowid.
+Only rows with pose get R*Tree entries (unlocalized != everywhere).
+R*Tree `rowid` matches `_meta.rowid` directly — no mapping needed.
+Time-only queries use the B-tree index on `_meta.ts` (faster than R*Tree for 1D).
+Spatial or spatio-temporal queries use the R*Tree.
 
 ### FTS5 (text search): `{name}_fts`
 
 ```sql
 CREATE VIRTUAL TABLE {name}_fts USING fts5(
-    id,
     content,
     content={name}_meta,
     content_rowid=rowid
 );
 ```
 
-Only for streams with `"text"` capability.
+Created by `TextStream` subclass only.
 
 ### Vector index (embedding search): `{name}_vec`
 
@@ -301,33 +305,26 @@ CREATE VIRTUAL TABLE {name}_vec USING vec0(
 );
 ```
 
-`rowid` matches meta rowid. Only for streams with `"embedding"` capability.
+`rowid` matches meta rowid. Created by `EmbeddingStream` subclass only.
 
 ## Key Design Decisions
 
-### Pose type bridging
+### Pose handling
 
-The spec defines its own lightweight `Pose(xyz, quat_xyzw)` for storage. DimOS has `dimos.msgs.geometry_msgs.Pose` with full algebra. Stream `append()` should accept either:
-
-```python
-# DimOS Pose
-images.append(frame, pose=robot_pose)  # dimos.msgs.geometry_msgs.Pose
-
-# Spec Pose (tuples)
-images.append(frame, pose=Pose(xyz=(1, 2, 3), quat_xyzw=(0, 0, 0, 1)))
-```
-
-Internal conversion via `to_storage_pose()` extracts `(x, y, z, qx, qy, qz, qw)` for SQL storage.
-
-### filter_near accepts DimOS types
+All pose parameters accept `PoseLike` (`Pose | PoseStamped | Point | PointStamped` from `dimos.msgs.geometry_msgs`). No custom pose type.
 
 ```python
-from dimos.msgs.geometry_msgs import Point, Pose as DimOSPose
+from dimos.msgs.geometry_msgs import Pose, Point
 
-q.filter_near(DimOSPose(1, 2, 3), radius=5.0)
-q.filter_near(Point(1, 2, 3), radius=5.0)
-q.filter_near(Pose(xyz=(1, 2, 3)), radius=5.0)
+images.append(frame, pose=robot_pose)       # Pose object
+q.filter_near(Point(1, 2, 3), radius=5.0)   # Point object
 ```
+
+Internally, `_extract_pose(p: PoseLike) -> tuple[float, ...]` pulls `(x, y, z, qx, qy, qz, qw)` for SQL columns. `ObservationRow.pose` returns a reconstructed `dimos.msgs.geometry_msgs.Pose`.
+
+### Payload serialization
+
+Only LCM message types are storable. `append()` calls `lcm_encode(payload)`, `load()` calls `lcm_decode(blob, payload_type)`. Non-LCM types are rejected at `append()` time with a `TypeError`.
 
 ### ObservationRef identity
 
@@ -347,6 +344,7 @@ Payload BLOBs live in `{name}_payload`, separate from `{name}_meta`. This ensure
 - `dimos/msgs/geometry_msgs/Pose.py` — DimOS Pose type, `PoseLike` type alias
 - `dimos/msgs/geometry_msgs/Point.py` — Point type
 - `dimos/core/resource.py` — Resource ABC (start/stop/dispose)
+- LCM `lcm_encode()` / `lcm_decode()` — payload serialization
 
 ## Verification
 

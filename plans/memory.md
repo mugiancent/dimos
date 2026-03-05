@@ -93,7 +93,6 @@ agent calls goto (event cluster 3)
 
 cluster 3 - find best image, correlate to lidar, project into space, navigate, once there, use VLM and visual nav
 
-
 ## example interaction 2: arm
 
 mustafa is able to ask for an object in proximity to the robot. robot searches memory biasing distance in time and space. if close match is not found, search can be expanded
@@ -110,3 +109,5 @@ mustafa is able to ask for an object in proximity to the robot. robot searches m
 # Questions
 
 "where was I, when this log line was added"
+
+"how long for have I been observing this object"

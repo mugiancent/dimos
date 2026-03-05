@@ -32,7 +32,6 @@ with db.session() as s:
     # --- Save with optional spatial context ---
     images.save(frame)                          # temporal only
     images.save(frame, pose=robot_pose)         # temporal + spatial (baked in)
-    images.save(frame, pose=(pos, quat))        # PoseLike tuple also works
 
     # --- Temporal queries (chainable) ---
     hit = images.at(now).one()                  # closest to now → Hit | None
