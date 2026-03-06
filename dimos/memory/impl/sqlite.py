@@ -111,8 +111,13 @@ def _reconstruct_pose(
     from dimos.msgs.geometry_msgs.PoseStamped import PoseStamped
 
     return PoseStamped(
-        position=[x, y or 0.0, z or 0.0],
-        orientation=[qx or 0.0, qy or 0.0, qz or 0.0, qw or 1.0],
+        position=[x, y if y is not None else 0.0, z if z is not None else 0.0],
+        orientation=[
+            qx if qx is not None else 0.0,
+            qy if qy is not None else 0.0,
+            qz if qz is not None else 0.0,
+            qw if qw is not None else 1.0,
+        ],
     )
 
 
@@ -221,6 +226,8 @@ def _compile_ids(
     sql += f" WHERE {where}"
 
     if query.order_field:
+        if query.order_field not in _ALLOWED_ORDER_FIELDS:
+            raise ValueError(f"Invalid order field: {query.order_field!r}")
         sql += f" ORDER BY {query.order_field}"
         if query.order_desc:
             sql += " DESC"
@@ -244,8 +251,6 @@ def _compile_query(query: StreamQuery, table: str) -> tuple[str, list[Any]]:
     where_parts: list[str] = []
     params: list[Any] = []
     joins: list[str] = []
-
-    _has_near_filter(query)
 
     for f in query.filters:
         if isinstance(f, NearFilter):
@@ -711,6 +716,10 @@ class SqliteTextBackend(SqliteStreamBackend):
 
         observations = [self._row_to_obs(r) for r in rows]
 
+        # Re-sort by FTS rank (IN clause doesn't preserve FTS5 ordering)
+        rank = {rid: i for i, rid in enumerate(rowids)}
+        observations.sort(key=lambda o: rank.get(o.id, len(rank)))
+
         near = _has_near_filter(query)
         if near is not None:
             observations = _apply_near_post_filter(observations, near)
@@ -781,6 +790,7 @@ class SqliteSession(Session):
         *,
         pose_provider: PoseProvider | None = None,
     ) -> Stream[Any]:
+        _validate_identifier(name)
         if name in self._streams:
             return self._streams[name]
 
@@ -810,11 +820,14 @@ class SqliteSession(Session):
         tokenizer: str = "unicode61",
         pose_provider: PoseProvider | None = None,
     ) -> TextStream[Any]:
+        _validate_identifier(name)
         if name in self._streams:
             return self._streams[name]  # type: ignore[return-value]
 
         if payload_type is None:
             payload_type = self._resolve_payload_type(name)
+        if payload_type is None:
+            payload_type = str
 
         self._ensure_stream_tables(name)
         self._ensure_fts_table(name, tokenizer)
@@ -838,6 +851,7 @@ class SqliteSession(Session):
         parent_table: str | None = None,
         embedding_model: EmbeddingModel | None = None,
     ) -> EmbeddingStream[Any]:
+        _validate_identifier(name)
         if name in self._streams:
             existing = self._streams[name]
             if embedding_model is not None and isinstance(existing, EmbeddingStream):
@@ -872,6 +886,7 @@ class SqliteSession(Session):
         rows = self._conn.execute("SELECT name, payload_module FROM _streams").fetchall()
         result: list[StreamInfo] = []
         for name, pmodule in rows:
+            _validate_identifier(name)
             count_row = self._conn.execute(f"SELECT COUNT(*) FROM {name}").fetchone()
             count = count_row[0] if count_row else 0
             result.append(StreamInfo(name=name, payload_type=pmodule, count=count))
@@ -995,7 +1010,14 @@ class SqliteSession(Session):
 
 
 class SqliteStore(Store):
-    """SQLite-backed memory store."""
+    """SQLite-backed memory store.
+
+    Note: all sessions returned by :meth:`session` share the same underlying
+    ``sqlite3.Connection``.  For concurrent write access from multiple threads,
+    open separate ``SqliteStore`` instances (one per thread) against the same
+    DB path — WAL mode allows this safely.  See ``MemoryModule._open_session``
+    for an example.
+    """
 
     def __init__(self, path: str) -> None:
         self._path = path

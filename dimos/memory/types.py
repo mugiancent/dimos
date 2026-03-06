@@ -135,8 +135,8 @@ class NearFilter:
     def matches(self, obs: Observation) -> bool:
         if obs.pose is None:
             return False
-        p1 = obs.pose.pose.position
-        p2 = self.pose.pose.position
+        p1 = obs.pose.position
+        p2 = self.pose.position
         dist = math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2 + (p1.z - p2.z) ** 2)
         return dist <= self.radius
 

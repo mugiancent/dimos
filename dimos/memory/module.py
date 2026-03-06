@@ -148,6 +148,10 @@ class MemoryModule(Module[MemoryModuleConfig]):
 
     @rpc
     def stop(self) -> None:
+        # Flush the last sharpness window so the final image isn't lost
+        if self._img_best is not None and self._images is not None:
+            self._images.append(self._img_best, ts=self._img_best.ts)
+            self._img_best = None
         self._session = None
         for store in self._stores:
             store.close()
