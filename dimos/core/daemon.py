@@ -97,7 +97,7 @@ def daemonize(log_dir: Path) -> None:
     The two intermediate parents call ``os._exit(0)``.
     """
     log_dir.mkdir(parents=True, exist_ok=True)
-    stderr_path = log_dir / "stderr.log"
+    stderr_path = log_dir / "daemon.log"
 
     # First fork — detach from terminal
     pid = os.fork()
