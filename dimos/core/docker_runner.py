@@ -18,16 +18,14 @@ from contextlib import suppress
 from dataclasses import dataclass, field
 import importlib
 import json
-import os
 import signal
 import subprocess
 import threading
 import time
 from typing import TYPE_CHECKING, Any
 
-from dimos.core.docker_build import build_image, image_exists
-from dimos.core.module import Module, ModuleConfig
-from dimos.core.rpc_client import RpcCall
+from dimos.core.module import ModuleConfig
+from dimos.core.rpc_client import ModuleProxyProtocol, RpcCall
 from dimos.protocol.rpc import LCMRPC
 from dimos.utils.logging_config import setup_logger
 from dimos.visualization.rerun.bridge import RERUN_GRPC_PORT, RERUN_WEB_PORT
@@ -36,9 +34,12 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
+    from dimos.core.module import Module
+
 logger = setup_logger()
 
 DOCKER_RUN_TIMEOUT = 120  #     Timeout for `docker run` command execution
+DOCKER_PULL_TIMEOUT_DEFAULT = 600  # Default timeout for `docker pull`
 DOCKER_CMD_TIMEOUT = 20  #       Timeout for quick Docker commands (inspect, rm, logs)
 DOCKER_STATUS_TIMEOUT = 10  #    Timeout for container status checks
 DOCKER_STOP_TIMEOUT = 30  #      Timeout for `docker stop` command (graceful shutdown)
@@ -94,9 +95,13 @@ class DockerModuleConfig(ModuleConfig):
     docker_command: list[str] | None = None
     docker_extra_args: list[str] = field(default_factory=list)
 
-    # Startup readiness
+    # Timeouts
+    docker_pull_timeout: float = DOCKER_PULL_TIMEOUT_DEFAULT
     docker_startup_timeout: float = 120.0
     docker_poll_interval: float = 1.0
+
+    # Reconnect to a running container instead of restarting it
+    docker_reconnect_container: bool = False
 
     # Advanced
     docker_bin: str = "docker"
@@ -105,7 +110,11 @@ class DockerModuleConfig(ModuleConfig):
 def is_docker_module(module_class: type) -> bool:
     """Check if a module class should run in Docker based on its default_config."""
     default_config = getattr(module_class, "default_config", None)
-    return default_config is not None and issubclass(default_config, DockerModuleConfig)
+    return (
+        default_config is not None
+        and isinstance(default_config, type)
+        and issubclass(default_config, DockerModuleConfig)
+    )
 
 
 # Docker helpers
@@ -157,107 +166,153 @@ def _extract_module_config(cfg: DockerModuleConfig) -> dict[str, Any]:
 # Host-side Docker-backed Module handle
 
 
-class DockerModule:
+class DockerModule(ModuleProxyProtocol):
     """
     Host-side handle for a module running inside Docker.
 
     Lifecycle:
-    - start(): launches container, waits for module ready via RPC
-    - stop(): stops container
-    - __getattr__: exposes RpcCall for @rpc methods on remote module
+    - start(): builds the image if needed, launches the container, waits for readiness, calls the remote module's start() RPC (after streams are wired)
+    - stop(): stops the container and cleans up
 
     Communication: All RPC happens via LCM multicast (requires --network=host).
     """
 
+    config: DockerModuleConfig
+
     def __init__(self, module_class: type[Module], *args: Any, **kwargs: Any) -> None:
-        # Config
+        from dimos.core.docker_build import build_image, image_exists
+
         config_class = getattr(module_class, "default_config", DockerModuleConfig)
+        if not issubclass(config_class, DockerModuleConfig):
+            raise TypeError(
+                f"{module_class.__name__}.default_config must be a DockerModuleConfig subclass, "
+                f"got {config_class.__name__}"
+            )
         config = config_class(**kwargs)
 
-        # Module info
         self._module_class = module_class
-        self._config = config
+        self.config = config
         self._args = args
         self._kwargs = kwargs
         self._running = False
         self.remote_name = module_class.__name__
+        # Derive container name from image + class name: "my-registry/foo:v2" → "dimos_myclass_foo_v2"
+        image_ref = config.docker_image.rsplit("/", 1)[-1]
         self._container_name = (
             config.docker_container_name
-            or f"dimos_{module_class.__name__.lower()}_{os.getpid()}_{int(time.time())}"
+            or f"dimos_{module_class.__name__.lower()}_{image_ref.replace(':', '_')}"
         )
 
-        # RPC setup
         self.rpc = LCMRPC()
         self.rpcs = set(module_class.rpcs.keys())  # type: ignore[attr-defined]
         self.rpc_calls: list[str] = getattr(module_class, "rpc_calls", [])
         self._unsub_fns: list[Callable[[], None]] = []
         self._bound_rpc_calls: dict[str, RpcCall] = {}
 
-        # Build image if needed (but don't start - caller must call start() explicitly)
-        if not image_exists(config):
-            logger.info(f"Building {config.docker_image}")
-            build_image(config)
+        # Build or pull image, launch container, wait for RPC server
+        try:
+            if not image_exists(config):
+                if config.docker_file is not None:
+                    logger.info(f"Building {config.docker_image}")
+                    build_image(config)
+                else:
+                    logger.info(f"Pulling {config.docker_image}")
+                    r = _run(
+                        [_docker_bin(config), "pull", config.docker_image],
+                        timeout=config.docker_pull_timeout,
+                    )
+                    if r.returncode != 0:
+                        raise RuntimeError(
+                            f"Failed to pull image '{config.docker_image}'.\n"
+                            f"STDOUT:\n{r.stdout}\nSTDERR:\n{r.stderr}"
+                        )
+
+            reconnect = False
+            if _is_container_running(config, self._container_name):
+                if config.docker_reconnect_container:
+                    logger.info(f"Reconnecting to running container: {self._container_name}")
+                    reconnect = True
+                else:
+                    logger.info(f"Stopping existing container: {self._container_name}")
+                    _run(
+                        [_docker_bin(config), "stop", self._container_name],
+                        timeout=DOCKER_STOP_TIMEOUT,
+                    )
+
+            if not reconnect:
+                _remove_container(config, self._container_name)
+                cmd = self._build_docker_run_command()
+                logger.info(f"Starting docker container: {self._container_name}")
+                r = _run(cmd, timeout=DOCKER_RUN_TIMEOUT)
+                if r.returncode != 0:
+                    raise RuntimeError(
+                        f"Failed to start container.\nSTDOUT:\n{r.stdout}\nSTDERR:\n{r.stderr}"
+                    )
+            self.rpc.start()
+            self._running = True
+            # docker run -d returns before Module.__init__ finishes in the container,
+            # so we poll until the RPC server is reachable before returning.
+            self._wait_for_rpc()
+        except Exception:
+            with suppress(Exception):
+                self._cleanup()
+            raise
+
+    def get_rpc_method_names(self) -> list[str]:
+        return self.rpc_calls
 
     def set_rpc_method(self, method: str, callable: RpcCall) -> None:
         callable.set_rpc(self.rpc)
         self._bound_rpc_calls[method] = callable
+        # Forward to container — Module.set_rpc_method unpickles the RpcCall
+        # and wires it with the container's own LCMRPC
+        self.rpc.call_sync(f"{self.remote_name}/set_rpc_method", ([method, callable], {}))
 
     def get_rpc_calls(self, *methods: str) -> RpcCall | tuple[RpcCall, ...]:
-        # Check all requested methods exist
         missing = set(methods) - self._bound_rpc_calls.keys()
         if missing:
             raise ValueError(f"RPC methods not found: {missing}")
-        # Return single RpcCall or tuple
         calls = tuple(self._bound_rpc_calls[m] for m in methods)
         return calls[0] if len(calls) == 1 else calls
 
     def start(self) -> None:
-        if self._running:
-            return
-
-        cfg = self._config
-
-        # Prevent accidental kill of running container with same name
-        if _is_container_running(cfg, self._container_name):
-            raise RuntimeError(
-                f"Container '{self._container_name}' already running. "
-                "Choose a different container_name or stop the existing container."
-            )
-        _remove_container(cfg, self._container_name)
-
-        cmd = self._build_docker_run_command()
-        logger.info(f"Starting docker container: {self._container_name}")
-        r = _run(cmd, timeout=DOCKER_RUN_TIMEOUT)
-        if r.returncode != 0:
-            raise RuntimeError(
-                f"Failed to start container.\nSTDOUT:\n{r.stdout}\nSTDERR:\n{r.stderr}"
-            )
-
-        self.rpc.start()
-        self._running = True
-        self._wait_for_ready()
+        """Invoke the remote module's start() RPC."""
+        try:
+            self.rpc.call_sync(f"{self.remote_name}/start", ([], {}))
+        except Exception:
+            with suppress(Exception):
+                self.stop()
+            raise
 
     def stop(self) -> None:
         """Gracefully stop the Docker container and clean up resources."""
-        # Signal remote module, stop RPC, unsubscribe handlers (ignore failures)
+        if not self._running:
+            return
+        self._running = False  # claim shutdown before any side-effects
         with suppress(Exception):
-            if self._running:
-                self.rpc.call_nowait(f"{self.remote_name}/stop", ([], {}))
+            self.rpc.call_nowait(f"{self.remote_name}/stop", ([], {}))
+        self._cleanup()
+
+    def _cleanup(self) -> None:
+        """Release all resources. Safe to call multiple times or from partial init."""
         with suppress(Exception):
             self.rpc.stop()
         for unsub in self._unsub_fns:
             with suppress(Exception):
                 unsub()
         self._unsub_fns.clear()
-
-        # Stop and remove container
-        _run([_docker_bin(self._config), "stop", self._container_name], timeout=DOCKER_STOP_TIMEOUT)
-        _remove_container(self._config, self._container_name)
+        with suppress(Exception):
+            _run(
+                [_docker_bin(self.config), "stop", self._container_name],
+                timeout=DOCKER_STOP_TIMEOUT,
+            )
+        with suppress(Exception):
+            _remove_container(self.config, self._container_name)
         self._running = False
         logger.info(f"Stopped container: {self._container_name}")
 
     def status(self) -> dict[str, Any]:
-        cfg = self._config
+        cfg = self.config
         return {
             "module": self.remote_name,
             "container_name": self._container_name,
@@ -266,17 +321,12 @@ class DockerModule:
         }
 
     def tail_logs(self, n: int = 200) -> str:
-        return _tail_logs(self._config, self._container_name, n=n)
+        return _tail_logs(self.config, self._container_name, n=n)
 
     def set_transport(self, stream_name: str, transport: Any) -> bool:
-        """Configure stream transport in container. Mirrors Module.set_transport() for autoconnect()."""
-        topic = getattr(transport, "topic", None)
-        if topic is None:
-            return False
-        if hasattr(topic, "topic"):
-            topic = topic.topic
+        """Forward to the container's Module.set_transport RPC."""
         result, _ = self.rpc.call_sync(
-            f"{self.remote_name}/configure_stream", ([stream_name, str(topic)], {})
+            f"{self.remote_name}/set_transport", ([stream_name, transport], {})
         )
         return bool(result)
 
@@ -290,7 +340,7 @@ class DockerModule:
 
     def _build_docker_run_command(self) -> list[str]:
         """Build the complete `docker run` command."""
-        cfg = self._config
+        cfg = self.config
         self._validate_config(cfg)
 
         cmd = [_docker_bin(cfg), "run", "-d"]
@@ -400,16 +450,45 @@ class DockerModule:
         if cfg.docker_command:
             return list(cfg.docker_command)
 
-        module_path = f"{self._module_class.__module__}.{self._module_class.__name__}"
+        module_name = self._module_class.__module__
+        if module_name == "__main__":
+            # When run as `python script.py`, __module__ is "__main__".
+            # Resolve to the actual dotted module path so the container can import it.
+            import __main__
+
+            spec = getattr(__main__, "__spec__", None)
+            if spec and spec.name:
+                module_name = spec.name
+            else:
+                # Fallback: derive from file path relative to cwd
+                main_file = getattr(__main__, "__file__", None)
+                if main_file:
+                    import pathlib
+
+                    try:
+                        rel = pathlib.Path(main_file).resolve().relative_to(pathlib.Path.cwd())
+                    except ValueError:
+                        raise RuntimeError(
+                            f"Cannot derive module path: '{main_file}' is not under cwd "
+                            f"'{pathlib.Path.cwd()}'. "
+                            "Run with `python -m` or set docker_command explicitly."
+                        ) from None
+                    module_name = str(rel.with_suffix("")).replace("/", ".")
+                else:
+                    raise RuntimeError(
+                        "Cannot determine module path for __main__. "
+                        "Run with `python -m` or set docker_command explicitly."
+                    )
+        module_path = f"{module_name}.{self._module_class.__name__}"
         # Filter out docker-specific kwargs (paths, etc.) - only pass module config
         kwargs = {"config": _extract_module_config(cfg)}
         payload = {"module_path": module_path, "args": list(self._args), "kwargs": kwargs}
         # DimOS base image entrypoint already runs "dimos.core.docker_runner run"
         return ["--payload", json.dumps(payload, separators=(",", ":"))]
 
-    def _wait_for_ready(self) -> None:
-        """Poll the module's RPC endpoint until ready, crashed, or timeout."""
-        cfg = self._config
+    def _wait_for_rpc(self) -> None:
+        """Poll until the container's RPC server is reachable."""
+        cfg = self.config
         start_time = time.time()
 
         logger.info(f"Waiting for {self.remote_name} to be ready...")
@@ -421,13 +500,14 @@ class DockerModule:
 
             try:
                 self.rpc.call_sync(
-                    f"{self.remote_name}/start", ([], {}), rpc_timeout=RPC_READY_TIMEOUT
+                    f"{self.remote_name}/get_rpc_method_names",
+                    ([], {}),
+                    rpc_timeout=RPC_READY_TIMEOUT,
                 )
                 elapsed = time.time() - start_time
                 logger.info(f"{self.remote_name} ready ({elapsed:.1f}s)")
                 return
             except (TimeoutError, ConnectionError, OSError):
-                # Module not ready yet - retry after poll interval
                 time.sleep(cfg.docker_poll_interval)
 
         logs = _tail_logs(cfg, self._container_name)
