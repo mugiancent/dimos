@@ -545,6 +545,11 @@ class SqliteEmbeddingBackend(SqliteStreamBackend):
 
         return super().execute_fetch(query)
 
+    def execute_count(self, query: StreamQuery) -> int:
+        if any(isinstance(f, EmbeddingSearchFilter) for f in query.filters):
+            return len(self.execute_fetch(query))
+        return super().execute_count(query)
+
     def _fetch_by_vector(
         self, query: StreamQuery, emb_filter: EmbeddingSearchFilter
     ) -> list[Observation]:
@@ -604,36 +609,12 @@ class SqliteEmbeddingBackend(SqliteStreamBackend):
         conn = self._conn
         table = self._table
         codec = self._codec
-        parent_table = self._parent_table
 
         def loader() -> Any:
             r = conn.execute(f"SELECT data FROM {table}_payload WHERE id = ?", (row_id,)).fetchone()
             if r is None:
                 raise LookupError(f"No payload for id={row_id}")
             return codec.decode(r[0])
-
-        source_loader = None
-        if pid is not None and parent_table is not None:
-            _pt: str = parent_table  # narrowed from str | None by the guard above
-
-            def _source_loader(parent_tbl: str = _pt, parent_row_id: int = pid) -> Any:
-                r = conn.execute(
-                    f"SELECT data FROM {parent_tbl}_payload WHERE id = ?", (parent_row_id,)
-                ).fetchone()
-                if r is None:
-                    raise LookupError(f"No parent payload for id={parent_row_id}")
-                # Resolve parent codec from _streams metadata
-                meta = conn.execute(
-                    "SELECT payload_module FROM _streams WHERE name = ?", (parent_tbl,)
-                ).fetchone()
-                if meta and meta[0]:
-                    parent_type = module_path_to_type(meta[0])
-                    parent_codec = codec_for_type(parent_type)
-                else:
-                    parent_codec = codec
-                return parent_codec.decode(r[0])
-
-            source_loader = _source_loader
 
         return EmbeddingObservation(
             id=row_id,
@@ -642,7 +623,6 @@ class SqliteEmbeddingBackend(SqliteStreamBackend):
             tags=_deserialize_tags(tags_json),
             parent_id=pid,
             _data_loader=loader,
-            _source_data_loader=source_loader,
         )
 
 
@@ -785,7 +765,7 @@ class SqliteSession(Session):
     def stream(
         self,
         name: str,
-        payload_type: type | None = None,
+        payload_type: type,
         *,
         pose_provider: PoseProvider | None = None,
     ) -> Stream[Any]:
@@ -793,28 +773,18 @@ class SqliteSession(Session):
         if name in self._streams:
             return self._streams[name]
 
-        if payload_type is None:
-            payload_type = self._resolve_payload_type(name)
-
-        if payload_type is None:
-            raise TypeError(
-                f"stream({name!r}): payload_type is required when creating a new stream. "
-                "Pass the type explicitly, e.g. session.stream('images', Image)."
-            )
-
         self._ensure_stream_tables(name)
         self._register_stream(name, payload_type, "stream")
 
         codec = codec_for_type(payload_type)
         backend = SqliteStreamBackend(self._conn, name, pose_provider=pose_provider, codec=codec)
-        s: Stream[Any] = Stream(backend=backend, session=self)
+        s: Stream[Any] = Stream(backend=backend, session=self, payload_type=payload_type)
         self._streams[name] = s
         return s
 
     def text_stream(
         self,
         name: str,
-        payload_type: type | None = None,
         *,
         tokenizer: str = "unicode61",
         pose_provider: PoseProvider | None = None,
@@ -823,33 +793,29 @@ class SqliteSession(Session):
         if name in self._streams:
             return self._streams[name]  # type: ignore[return-value]
 
-        if payload_type is None:
-            payload_type = self._resolve_payload_type(name)
-        if payload_type is None:
-            payload_type = str
-
         self._ensure_stream_tables(name)
         self._ensure_fts_table(name, tokenizer)
-        self._register_stream(name, payload_type, "text")
+        self._register_stream(name, str, "text")
 
-        codec = codec_for_type(payload_type)
+        codec = codec_for_type(str)
         backend = SqliteTextBackend(
             self._conn, name, tokenizer=tokenizer, pose_provider=pose_provider, codec=codec
         )
-        ts: TextStream[Any] = TextStream(backend=backend, session=self)
+        ts: TextStream[Any] = TextStream(backend=backend, session=self, payload_type=str)
         self._streams[name] = ts
         return ts
 
     def embedding_stream(
         self,
         name: str,
-        payload_type: type | None = None,
         *,
         vec_dimensions: int | None = None,
         pose_provider: PoseProvider | None = None,
         parent_table: str | None = None,
         embedding_model: EmbeddingModel | None = None,
     ) -> EmbeddingStream[Any]:
+        from dimos.models.embedding.base import Embedding
+
         _validate_identifier(name)
         if name in self._streams:
             existing = self._streams[name]
@@ -857,13 +823,10 @@ class SqliteSession(Session):
                 existing._embedding_model = embedding_model
             return existing  # type: ignore[return-value]
 
-        if payload_type is None:
-            payload_type = self._resolve_payload_type(name)
-
         self._ensure_stream_tables(name)
-        self._register_stream(name, payload_type, "embedding", embedding_dim=vec_dimensions)
+        self._register_stream(name, Embedding, "embedding", embedding_dim=vec_dimensions)
 
-        codec = codec_for_type(payload_type)
+        codec = codec_for_type(Embedding)
         backend = SqliteEmbeddingBackend(
             self._conn,
             name,
@@ -876,7 +839,10 @@ class SqliteSession(Session):
             backend._ensure_vec_table()
 
         es: EmbeddingStream[Any] = EmbeddingStream(
-            backend=backend, session=self, embedding_model=embedding_model
+            backend=backend,
+            session=self,
+            embedding_model=embedding_model,
+            payload_type=Embedding,
         )
         self._streams[name] = es
         return es
@@ -914,11 +880,13 @@ class SqliteSession(Session):
 
         target: Stream[Any]
         if isinstance(transformer, (EmbeddingTransformer, TextEmbeddingTransformer)):
-            target = self.embedding_stream(name, payload_type, parent_table=source_table)
+            target = self.embedding_stream(name, parent_table=source_table)
             target._embedding_model = transformer.model
         elif isinstance(transformer, CaptionTransformer):
-            target = self.text_stream(name, payload_type)
+            target = self.text_stream(name)
         else:
+            if payload_type is None:
+                raise TypeError("materialize_transform requires payload_type for plain streams")
             target = self.stream(name, payload_type)
 
         # Record parent lineage in _streams registry

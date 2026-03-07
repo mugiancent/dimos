@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 import math
-from typing import TYPE_CHECKING, Any, TypeAlias
+from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
 if TYPE_CHECKING:
     from dimos.models.embedding.base import Embedding
@@ -52,35 +52,22 @@ class Observation:
 class EmbeddingObservation(Observation):
     """Returned by EmbeddingStream terminals.
 
-    .data auto-projects to the source stream's payload type.
-    .embedding gives the Embedding vector.
+    .data returns the Embedding stored in this stream.
+    .embedding is a convenience alias for .data (typed as Embedding).
     .similarity is populated (0..1) when fetched via search_embedding (vec0 cosine).
+
+    To get source data (e.g. the original Image), use .project_to(source_stream).
     """
 
     similarity: float | None = field(default=None, repr=True)
-    _embedding: Embedding | None = field(default=None, repr=False)
-    _embedding_loader: Callable[[], Embedding] | None = field(
-        default=None, repr=False, compare=False
-    )
-    _source_data_loader: Callable[[], Any] | None = field(default=None, repr=False, compare=False)
 
     @property
-    def data(self) -> Any:
-        if self._data is not _UNSET:
-            return self._data
-        if self._source_data_loader is not None:
-            self._data = self._source_data_loader()
-            return self._data
-        return super().data
+    def data(self) -> Embedding:
+        return cast("Embedding", super().data)
 
     @property
     def embedding(self) -> Embedding:
-        if self._embedding is not None:
-            return self._embedding
-        if self._embedding_loader is not None:
-            self._embedding = self._embedding_loader()
-            return self._embedding
-        raise LookupError("No embedding available")
+        return self.data
 
 
 @dataclass
@@ -101,6 +88,9 @@ class AfterFilter:
     def matches(self, obs: Observation) -> bool:
         return obs.ts is not None and obs.ts > self.t
 
+    def __str__(self) -> str:
+        return f"after(t={self.t})"
+
 
 @dataclass(frozen=True)
 class BeforeFilter:
@@ -108,6 +98,9 @@ class BeforeFilter:
 
     def matches(self, obs: Observation) -> bool:
         return obs.ts is not None and obs.ts < self.t
+
+    def __str__(self) -> str:
+        return f"before(t={self.t})"
 
 
 @dataclass(frozen=True)
@@ -118,6 +111,9 @@ class TimeRangeFilter:
     def matches(self, obs: Observation) -> bool:
         return obs.ts is not None and self.t1 <= obs.ts <= self.t2
 
+    def __str__(self) -> str:
+        return f"time_range({self.t1}, {self.t2})"
+
 
 @dataclass(frozen=True)
 class AtFilter:
@@ -126,6 +122,9 @@ class AtFilter:
 
     def matches(self, obs: Observation) -> bool:
         return obs.ts is not None and abs(obs.ts - self.t) <= self.tolerance
+
+    def __str__(self) -> str:
+        return f"at(t={self.t}, tol={self.tolerance})"
 
 
 @dataclass(frozen=True)
@@ -141,6 +140,9 @@ class NearFilter:
         dist = math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2 + (p1.z - p2.z) ** 2)
         return dist <= self.radius
 
+    def __str__(self) -> str:
+        return f"near(radius={self.radius})"
+
 
 @dataclass(frozen=True)
 class TagsFilter:
@@ -148,6 +150,10 @@ class TagsFilter:
 
     def matches(self, obs: Observation) -> bool:
         return all(obs.tags.get(k) == v for k, v in self.tags)
+
+    def __str__(self) -> str:
+        pairs = ", ".join(f"{k}={v!r}" for k, v in self.tags)
+        return f"tags({pairs})"
 
 
 @dataclass(frozen=True)
@@ -158,6 +164,9 @@ class EmbeddingSearchFilter:
     def matches(self, obs: Observation) -> bool:
         return True  # top-k handled as special pass in ListBackend
 
+    def __str__(self) -> str:
+        return f"search(k={self.k})"
+
 
 @dataclass(frozen=True)
 class TextSearchFilter:
@@ -166,6 +175,9 @@ class TextSearchFilter:
 
     def matches(self, obs: Observation) -> bool:
         return self.text.lower() in str(obs.data).lower()
+
+    def __str__(self) -> str:
+        return f"text({self.text!r})"
 
 
 @dataclass(frozen=True)
@@ -182,6 +194,10 @@ class LineageFilter:
 
     def matches(self, obs: Observation) -> bool:
         raise NotImplementedError("LineageFilter requires a database backend")
+
+    def __str__(self) -> str:
+        hops = " -> ".join(self.hops) if self.hops else "direct"
+        return f"lineage({self.source_table} -> {hops})"
 
 
 Filter: TypeAlias = (
@@ -206,3 +222,14 @@ class StreamQuery:
     order_desc: bool = False
     limit_val: int | None = None
     offset_val: int | None = None
+
+    def __str__(self) -> str:
+        parts: list[str] = [str(f) for f in self.filters]
+        if self.order_field:
+            direction = "desc" if self.order_desc else "asc"
+            parts.append(f"order({self.order_field}, {direction})")
+        if self.limit_val is not None:
+            parts.append(f"limit({self.limit_val})")
+        if self.offset_val is not None:
+            parts.append(f"offset({self.offset_val})")
+        return " | ".join(parts)

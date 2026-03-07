@@ -93,7 +93,14 @@ class TestTextEmbeddingTransformer:
 
         results = emb_stream.search_embedding("Robot navigated to kitchen", k=1).fetch()
         assert len(results) == 1
-        assert isinstance(results[0].data, str)
+        assert isinstance(results[0].data, Embedding)
+
+        # project_to to get source text
+        projected = (
+            emb_stream.search_embedding("Robot navigated to kitchen", k=1).project_to(logs).fetch()
+        )
+        assert len(projected) == 1
+        assert isinstance(projected[0].data, str)
 
     def test_text_embedding_live(self, session: SqliteSession) -> None:
         """Live mode: new text is embedded automatically."""
@@ -110,8 +117,8 @@ class TestTextEmbeddingTransformer:
         logs.append("Another log entry", ts=2.0)
         assert emb_stream.count() == 2
 
-    def test_text_embedding_search_projects_to_source(self, session: SqliteSession) -> None:
-        """search_embedding auto-projects back to source text stream."""
+    def test_text_embedding_search_and_project(self, session: SqliteSession) -> None:
+        """search_embedding + project_to retrieves source text."""
         logs = session.stream("te_proj_logs", str)
         logs.append("Robot entered kitchen", ts=1.0)
         logs.append("Battery warning", ts=2.0)
@@ -121,6 +128,6 @@ class TestTextEmbeddingTransformer:
             "te_proj_embs"
         )
 
-        results = emb_stream.search_embedding("kitchen", k=2).fetch()
+        results = emb_stream.search_embedding("kitchen", k=2).project_to(logs).fetch()
         assert len(results) == 2
         assert all("kitchen" in r.data.lower() for r in results)

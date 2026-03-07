@@ -102,7 +102,7 @@ class TestE2EPipeline:
 
         store2 = SqliteStore(str(tmp_path / "e2e.db"))
         session2 = store2.session()
-        reloaded = session2.embedding_stream("clip_embeddings")
+        reloaded = session2.embedding_stream("clip_embeddings", vec_dimensions=512)
         assert reloaded.count() == n_emb
 
         results2 = reloaded.search_embedding(query_emb, k=3).fetch()

@@ -15,16 +15,18 @@
 from __future__ import annotations
 
 from abc import abstractmethod
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from dimos.core.resource import Resource
 
 if TYPE_CHECKING:
-    from dimos.models.embedding.base import EmbeddingModel
+    from dimos.models.embedding.base import Embedding, EmbeddingModel
 
     from .stream import EmbeddingStream, Stream, TextStream
     from .transformer import Transformer
     from .types import PoseProvider, StreamInfo
+
+T = TypeVar("T")
 
 
 class Session(Resource):
@@ -40,34 +42,32 @@ class Session(Resource):
     def stream(
         self,
         name: str,
-        payload_type: type | None = None,
+        payload_type: type[T],
         *,
         pose_provider: PoseProvider | None = None,
-    ) -> Stream[Any]:
+    ) -> Stream[T]:
         """Get or create a stored stream backed by the database."""
 
     @abstractmethod
     def text_stream(
         self,
         name: str,
-        payload_type: type | None = None,
         *,
         tokenizer: str = "unicode61",
         pose_provider: PoseProvider | None = None,
-    ) -> TextStream[Any]:
+    ) -> TextStream[str]:
         """Get or create a text stream with FTS index."""
 
     @abstractmethod
     def embedding_stream(
         self,
         name: str,
-        payload_type: type | None = None,
         *,
         vec_dimensions: int | None = None,
         pose_provider: PoseProvider | None = None,
         parent_table: str | None = None,
         embedding_model: EmbeddingModel | None = None,
-    ) -> EmbeddingStream[Any]:
+    ) -> EmbeddingStream[Embedding]:
         """Get or create an embedding stream with vec0 index."""
 
     @abstractmethod

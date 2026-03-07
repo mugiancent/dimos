@@ -231,14 +231,14 @@ class TestFetchPages:
 
 class TestTextStream:
     def test_create_and_append(self, session: SqliteSession) -> None:
-        s = session.text_stream("logs", str)
+        s = session.text_stream("logs")
         s.append("Motor fault on joint 3")
         s.append("Battery low warning")
 
         assert s.count() == 2
 
     def test_text_search(self, session: SqliteSession) -> None:
-        s = session.text_stream("logs", str)
+        s = session.text_stream("logs")
         s.append("Motor fault on joint 3")
         s.append("Battery low warning")
         s.append("Motor overheating on joint 5")
@@ -365,8 +365,8 @@ class TestEmbeddingStream:
         emb_stream = s.transform(EmbeddingTransformer(FakeEmbedder())).store("cam_embeddings")
         assert emb_stream.count() == 2
 
-        # Search auto-projects to source images
-        results = emb_stream.search_embedding([0.5, 0.5, 0.0, 0.0], k=1).fetch()
+        # Search returns EmbeddingObservation; project_to to get source images
+        results = emb_stream.search_embedding([0.5, 0.5, 0.0, 0.0], k=1).project_to(s).fetch()
         assert len(results) == 1
         assert _img_close(results[0].data, images[0]) or _img_close(results[0].data, images[1])
 
@@ -377,7 +377,7 @@ class TestListStreams:
 
     def test_list_after_create(self, session: SqliteSession) -> None:
         session.stream("images", Image)
-        session.text_stream("logs", str)
+        session.text_stream("logs")
 
         infos = session.list_streams()
         names = {i.name for i in infos}
@@ -443,7 +443,7 @@ class TestTransformStore:
         expected = f"{images[0].width}x{images[0].height}"
         assert rows[0].data == expected
 
-        reloaded = session.stream("shapes")
+        reloaded = session.stream("shapes", str)
         assert reloaded.count() == 2
 
     def test_transform_store_live(self, session: SqliteSession, images: list[Image]) -> None:
@@ -508,8 +508,10 @@ class TestIteration:
 
 
 class TestProjectTo:
-    def test_search_auto_projects(self, session: SqliteSession, images: list[Image]) -> None:
-        """search_embedding auto-projects to source stream."""
+    def test_search_returns_embedding_obs(
+        self, session: SqliteSession, images: list[Image]
+    ) -> None:
+        """search_embedding returns EmbeddingObservation; .data provides source data via lineage."""
 
         class FakeEmbedder(EmbeddingModel):
             device = "cpu"
@@ -532,21 +534,25 @@ class TestProjectTo:
         embs = imgs.transform(EmbeddingTransformer(FakeEmbedder())).store("pt_embs")
         assert embs.count() == 3
 
-        # search_embedding auto-projects — results are Images, not Embeddings
-        projected = embs.search_embedding([0.5, 0.5, 0.0], k=2).fetch()
+        # search_embedding returns EmbeddingObservation with Embedding data
+        results = embs.search_embedding([0.5, 0.5, 0.0], k=2).fetch()
+        assert len(results) == 2
+        for obs in results:
+            assert isinstance(obs, EmbeddingObservation)
+            assert isinstance(obs.data, Embedding)
+
+        # project_to to get source images
+        projected = embs.search_embedding([0.5, 0.5, 0.0], k=2).project_to(imgs).fetch()
         assert len(projected) == 2
         for obs in projected:
-            assert not isinstance(obs, EmbeddingObservation)
             assert (
                 _img_close(obs.data, images[0])
                 or _img_close(obs.data, images[1])
                 or _img_close(obs.data, images[2])
             )
 
-    def test_search_auto_projects_chainable(
-        self, session: SqliteSession, images: list[Image]
-    ) -> None:
-        """Auto-projected search results support further chaining."""
+    def test_search_chainable(self, session: SqliteSession, images: list[Image]) -> None:
+        """Search results support further filter chaining."""
 
         class FakeEmbedder(EmbeddingModel):
             device = "cpu"
@@ -568,7 +574,7 @@ class TestProjectTo:
 
         embs = imgs.transform(EmbeddingTransformer(FakeEmbedder())).store("ptc_embs")
 
-        # Chain time filter after auto-projected search
+        # Chain time filter after search
         results = embs.search_embedding([0.5, 0.5, 0.0], k=10).after(3.0).fetch()
         assert all(r.ts is not None and r.ts > 3.0 for r in results)
 
@@ -601,7 +607,7 @@ class TestProjectTo:
         assert all(r.ts is not None and r.ts > 3.0 for r in results)
 
     def test_two_hop(self, session: SqliteSession, images: list[Image]) -> None:
-        """search_embedding auto-projects to direct parent, then project_to for second hop."""
+        """project_to handles multi-hop lineage (embs → mid → raw)."""
 
         class FakeEmbedder(EmbeddingModel):
             device = "cpu"
@@ -627,7 +633,7 @@ class TestProjectTo:
         embs = mid.transform(EmbeddingTransformer(FakeEmbedder())).store("th_embs")
         assert embs.count() == 3
 
-        # search auto-projects to mid (direct parent), then project_to(raw) for second hop
+        # project_to(raw) walks the full chain: th_embs → th_mid → th_raw
         projected = embs.search_embedding([0.5, 0.5, 0.0], k=2).project_to(raw)
         results = projected.fetch()
         assert len(results) == 2
@@ -779,8 +785,10 @@ class TestSimilarityScores:
         assert isinstance(results[0], EmbeddingObservation)
         assert results[0].similarity is None
 
-    def test_raw_returns_embedding_obs(self, session: SqliteSession, images: list[Image]) -> None:
-        """search_embedding(raw=True) returns EmbeddingObservation with similarity."""
+    def test_search_embedding_obs_with_similarity(
+        self, session: SqliteSession, images: list[Image]
+    ) -> None:
+        """search_embedding returns EmbeddingObservation with similarity scores."""
 
         class FakeEmbedder(EmbeddingModel):
             device = "cpu"
@@ -801,14 +809,12 @@ class TestSimilarityScores:
 
         embs = imgs.transform(EmbeddingTransformer(FakeEmbedder())).store("sim_proj_embs")
 
-        # raw=True: get raw EmbeddingObservation with similarity
-        results = embs.search_embedding([0.5, 0.5, 0.0], k=2, raw=True).fetch()
+        results = embs.search_embedding([0.5, 0.5, 0.0], k=2).fetch()
         assert len(results) == 2
         for obs in results:
             assert isinstance(obs, EmbeddingObservation)
             assert obs.similarity is not None
-            # .data auto-projects to source Image via _source_data_loader
-            assert isinstance(obs.data, Image)
+            assert isinstance(obs.data, Embedding)
 
 
 class TestObservationSet:

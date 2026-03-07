@@ -88,8 +88,14 @@ def e2e_db(clip: CLIPModel) -> Generator[tuple[SqliteStore, Any], None, None]:
 @pytest.fixture(scope="module")
 def embeddings(e2e_db: tuple[SqliteStore, Any], clip: CLIPModel) -> EmbeddingStream[Any]:
     _, session = e2e_db
-    stream: EmbeddingStream[Any] = session.embedding_stream("clip_embeddings", embedding_model=clip)  # type: ignore[assignment]
+    stream: EmbeddingStream[Any] = session.embedding_stream("clip_embeddings", embedding_model=clip)  # type: ignore[return-value]
     return stream
+
+
+@pytest.fixture(scope="module")
+def sharp_frames(e2e_db: tuple[SqliteStore, Any]) -> Any:
+    _, session = e2e_db
+    return session.stream("sharp_frames", Image)
 
 
 class TestEmbeddingSearch:
@@ -106,40 +112,46 @@ class TestEmbeddingSearch:
 
     @pytest.mark.parametrize("query", QUERIES)
     def test_search_returns_results(self, embeddings: EmbeddingStream[Any], query: str) -> None:
+        from dimos.memory.types import EmbeddingObservation
+
         results = embeddings.search_embedding(query, k=5).fetch()
         assert len(results) > 0
         for obs in results:
             assert obs.ts is not None
-            assert isinstance(obs.data, Image)
+            assert isinstance(obs, EmbeddingObservation)
 
     @pytest.mark.parametrize("query", QUERIES)
-    def test_search_exports_images(self, embeddings: EmbeddingStream[Any], query: str) -> None:
+    def test_search_exports_images(
+        self, embeddings: EmbeddingStream[Any], sharp_frames: Any, query: str
+    ) -> None:
         slug = query.replace(" ", "_")[:30]
-        results = embeddings.search_embedding(query, k=5).fetch()
+        results = embeddings.search_embedding(query, k=5).project_to(sharp_frames).fetch()
 
         for rank, img in enumerate(results):
             fname = DB_DIR / f"{slug}_{rank + 1}_id{img.id}_ts{img.ts:.0f}.jpg"
             img.data.save(str(fname))
             print(f"  [{rank + 1}] id={img.id} ts={img.ts:.2f}")
 
-    def test_raw_search_has_similarity(self, embeddings: EmbeddingStream[Any]) -> None:
+    def test_search_has_similarity(self, embeddings: EmbeddingStream[Any]) -> None:
         from dimos.memory.types import EmbeddingObservation
 
-        raw = embeddings.search_embedding("a hallway", k=10, raw=True).fetch()
-        assert len(raw) > 0
-        for obs in raw:
+        results = embeddings.search_embedding("a hallway", k=10).fetch()
+        assert len(results) > 0
+        for obs in results:
             assert isinstance(obs, EmbeddingObservation)
             assert obs.similarity is not None
             assert 0.0 <= obs.similarity <= 1.0
 
-    def test_caption_search_results(self, embeddings: EmbeddingStream[Any]) -> None:
+    def test_caption_search_results(
+        self, embeddings: EmbeddingStream[Any], sharp_frames: Any
+    ) -> None:
         from dimos.models.vl.florence import Florence2Model
 
         captioner = Florence2Model()
         captioner.start()
         caption_xf = CaptionTransformer(captioner)
 
-        results = embeddings.search_embedding("a door", k=3).fetch()
+        results = embeddings.search_embedding("a door", k=3).project_to(sharp_frames).fetch()
         captions = results.transform(caption_xf).fetch()
 
         assert len(captions) == len(results)
@@ -160,6 +172,6 @@ class TestRerunStream:
         rr.init("memory_e2e_test", spawn=True)
 
         _, session = e2e_db
-        n = to_rerun(session.stream("sharp_frames"))
+        n = to_rerun(session.stream("sharp_frames", Image))
         assert n > 0
         print(f"  Logged {n} images to Rerun")

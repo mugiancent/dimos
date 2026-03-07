@@ -93,10 +93,12 @@ class Stream(Generic[T]):
         *,
         query: StreamQuery | None = None,
         session: Session | None = None,
+        payload_type: type | None = None,
     ) -> None:
         self._backend = backend
         self._query = query or StreamQuery()
         self._session: Session | None = session
+        self._payload_type: type | None = payload_type
 
     def _clone(self, **overrides: Any) -> Stream[T]:
         """Return a new Stream with updated query fields."""
@@ -112,7 +114,16 @@ class Stream(Generic[T]):
         clone._backend = self._backend
         clone._query = new_query
         clone._session = self._session
+        clone._payload_type = self._payload_type
         return clone
+
+    def __repr__(self) -> str:
+        cls = type(self).__name__
+        type_name = self._payload_type.__name__ if self._payload_type else "?"
+        name = self._backend.stream_name if self._backend else "unbound"
+        head = f'{cls}[{type_name}]("{name}")'
+        query_str = str(self._query)
+        return f"{head} | {query_str}" if query_str else head
 
     def _with_filter(self, f: Filter) -> Stream[T]:
         return self._clone(filters=(*self._query.filters, f))
@@ -354,8 +365,9 @@ class EmbeddingStream(Stream[T]):
         query: StreamQuery | None = None,
         session: Session | None = None,
         embedding_model: EmbeddingModel | None = None,
+        payload_type: type | None = None,
     ) -> None:
-        super().__init__(backend=backend, query=query, session=session)
+        super().__init__(backend=backend, query=query, session=session, payload_type=payload_type)
         self._embedding_model = embedding_model
 
     def _require_model(self) -> EmbeddingModel:
@@ -378,19 +390,16 @@ class EmbeddingStream(Stream[T]):
         query: Embedding | list[float] | str | Any,
         *,
         k: int,
-        raw: bool = False,
-    ) -> Stream[Any]:
+    ) -> EmbeddingStream[T]:
         """Search by vector similarity.
 
         Accepts pre-computed embeddings, raw float lists, text strings, or
         images/other objects.  Text and non-vector inputs are auto-embedded
         using the model that created this stream.
 
-        By default, auto-projects to the source stream so results contain the
-        source data (e.g. Images) rather than Embedding objects.  Set
-        ``raw=True`` to skip auto-projection and get ``EmbeddingObservation``
-        results with ``.similarity``, ``.pose``, ``.ts``, and ``.data``
-        (auto-projected to parent via ``_source_data_loader``).
+        Returns an EmbeddingStream — use ``.project_to(source)`` to get
+        results in the source stream's type, or ``.fetch()`` for
+        ``EmbeddingObservation`` with ``.similarity`` scores.
         """
         from dimos.models.embedding.base import Embedding as EmbeddingCls
 
@@ -398,7 +407,7 @@ class EmbeddingStream(Stream[T]):
             emb = self._require_model().embed_text(query)
             if isinstance(emb, list):
                 emb = emb[0]
-            return self.search_embedding(emb, k=k, raw=raw)
+            return self.search_embedding(emb, k=k)
 
         if isinstance(query, EmbeddingCls):
             vec = query.to_numpy().tolist()
@@ -409,29 +418,16 @@ class EmbeddingStream(Stream[T]):
             emb = self._require_model().embed(query)
             if isinstance(emb, list):
                 emb = emb[0]
-            return self.search_embedding(emb, k=k, raw=raw)
+            return self.search_embedding(emb, k=k)
 
         clone = self._with_filter(EmbeddingSearchFilter(vec, k))
-        filtered: EmbeddingStream[T] = EmbeddingStream(
+        return EmbeddingStream(
             backend=clone._backend,
             query=clone._query,
             session=clone._session,
             embedding_model=self._embedding_model,
+            payload_type=clone._payload_type,
         )
-
-        if raw:
-            return filtered
-
-        # Auto-project to source stream when lineage exists
-        session = filtered._session
-        backend = filtered._backend
-        if session is not None and backend is not None:
-            parent_name = session.resolve_parent_stream(backend.stream_name)
-            if parent_name is not None:
-                source = session.stream(parent_name)
-                return filtered.project_to(source)
-
-        return filtered
 
     def fetch(self) -> ObservationSet[T]:  # type: ignore[override]
         backend = self._require_backend()
@@ -457,7 +453,10 @@ class TextStream(Stream[T]):
     def search_text(self, text: str, *, k: int | None = None) -> TextStream[T]:
         clone = self._with_filter(TextSearchFilter(text, k))
         ts: TextStream[T] = TextStream(
-            backend=clone._backend, query=clone._query, session=clone._session
+            backend=clone._backend,
+            query=clone._query,
+            session=clone._session,
+            payload_type=clone._payload_type,
         )
         return ts
 
@@ -478,6 +477,28 @@ class TransformStream(Stream[R]):
         self._transformer = transformer
         self._live = live
         self._backfill_only = backfill_only
+
+    def _clone(self, **overrides: Any) -> Stream[R]:
+        clone = super()._clone(**overrides)
+        if isinstance(clone, TransformStream):
+            clone._source = self._source
+            clone._transformer = self._transformer
+            clone._live = self._live
+            clone._backfill_only = self._backfill_only
+        return clone
+
+    def __repr__(self) -> str:
+        type_name = self._transformer.output_type.__name__ if self._transformer.output_type else "?"
+        xf_name = type(self._transformer).__name__
+        flags: list[str] = []
+        if self._live:
+            flags.append("live=True")
+        if self._backfill_only:
+            flags.append("backfill_only=True")
+        flag_str = ", " + ", ".join(flags) if flags else ""
+        head = f"TransformStream[{type_name}]({self._source!r} -> {xf_name}{flag_str})"
+        query_str = str(self._query)
+        return f"{head} | {query_str}" if query_str else head
 
     def fetch(self) -> ObservationSet[R]:
         """Execute transform in memory, collecting results."""
@@ -647,11 +668,12 @@ class ObservationSet(Stream[T]):
             limit_val=overrides.get("limit_val", q.limit_val),
             offset_val=overrides.get("offset_val", q.offset_val),
         )
-        clone: Stream[T] = Stream.__new__(Stream)
-        clone._backend = self._backend
-        clone._query = new_query
-        clone._session = self._session
-        return clone
+        return Stream(
+            backend=self._backend,
+            query=new_query,
+            session=self._session,
+            payload_type=self._payload_type,
+        )
 
     def append(
         self,
