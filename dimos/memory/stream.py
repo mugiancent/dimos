@@ -174,12 +174,18 @@ class Stream(Generic[T]):
     def time_range(self, t1: float, t2: float) -> Stream[T]:
         return self._with_filter(TimeRangeFilter(t1, t2))
 
-    def at(self, t: float, *, tolerance: float = 1.0) -> Stream[T]:
+    def at(self, t: float | Stream[Any], *, tolerance: float = 1.0) -> Stream[T]:
+        if isinstance(t, Stream):
+            t1, t2 = t.get_time_range()
+            return self._with_filter(TimeRangeFilter(t1 - tolerance, t2 + tolerance))
         return self._with_filter(AtFilter(t, tolerance))
 
     # ── Spatial filter ────────────────────────────────────────────────
 
-    def near(self, pose: PoseLike, radius: float) -> Stream[T]:
+    def near(self, pose: PoseLike | Stream[Any], radius: float) -> Stream[T]:
+        if isinstance(pose, Stream):
+            center, max_dist = pose.bounding_sphere()
+            return self._with_filter(NearFilter(center, max_dist + radius))
         return self._with_filter(NearFilter(pose, radius))
 
     # ── Tag filter ────────────────────────────────────────────────────
@@ -391,6 +397,30 @@ class Stream(Generic[T]):
 
     def get_time_range(self) -> tuple[float, float]:
         return (self.first().ts, self.last().ts)
+
+    def bounding_sphere(self) -> tuple[Any, float]:
+        """Return (centroid_pose, max_distance_from_centroid) for all poses."""
+        xs: list[float] = []
+        ys: list[float] = []
+        zs: list[float] = []
+        for obs in self:
+            if obs.pose is None:
+                continue
+            p = obs.pose.position
+            xs.append(p.x)
+            ys.append(p.y)
+            zs.append(p.z)
+        if not xs:
+            raise ValueError("No observations with poses in this stream")
+        cx, cy, cz = sum(xs) / len(xs), sum(ys) / len(ys), sum(zs) / len(zs)
+        max_dist = max(
+            ((x - cx) ** 2 + (y - cy) ** 2 + (z - cz) ** 2) ** 0.5
+            for x, y, z in zip(xs, ys, zs, strict=True)
+        )
+        from dimos.msgs.geometry_msgs.PoseStamped import PoseStamped
+
+        center = PoseStamped(position=[cx, cy, cz])
+        return center, max_dist
 
     def summary(self) -> str:
         from datetime import datetime, timezone

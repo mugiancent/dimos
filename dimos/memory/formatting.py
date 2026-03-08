@@ -68,7 +68,14 @@ def _at_rich(f: Any) -> Text:
 def _near_rich(f: Any) -> Text:
     t = Text()
     t.append("near", style="cyan")
-    t.append(f"(radius={f.radius})")
+    t.append("(")
+    if f.pose is not None and hasattr(f.pose, "position"):
+        p = f.pose.position
+        t.append(f"[{p.x:.1f}, {p.y:.1f}, {p.z:.1f}]", style="green")
+        t.append(f", radius={f.radius:.2f}")
+    else:
+        t.append(f"radius={f.radius}")
+    t.append(")")
     return t
 
 

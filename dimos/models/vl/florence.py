@@ -66,13 +66,13 @@ class Florence2Model(HuggingFaceModel, Captioner):
             self.config.model_name, trust_remote_code=self.config.trust_remote_code
         )
 
-    _STRIP_PREFIXES = ("The image shows ", "The image is a ")
+    _STRIP_PREFIXES = ("The image shows ", "The image is a ", "A ")
 
     @staticmethod
     def _clean_caption(text: str) -> str:
         for prefix in Florence2Model._STRIP_PREFIXES:
             if text.startswith(prefix):
-                return text[len(prefix):]
+                return text[len(prefix) :]
         return text
 
     def caption(self, image: Image) -> str:

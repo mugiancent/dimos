@@ -163,7 +163,7 @@ class CaptionTransformer(Transformer[Any, str]):
     supports_backfill: bool = True
     supports_live: bool = True
 
-    def __init__(self, model: Captioner, *, batch_size: int = 8) -> None:
+    def __init__(self, model: Captioner, *, batch_size: int = 16) -> None:
         self.model = model
         self.batch_size = batch_size
         self.output_type: type | None = str
