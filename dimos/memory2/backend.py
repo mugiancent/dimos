@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeVar, runtime_check
 from dimos.memory2.type import Observation, StreamQuery
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator
 
     from dimos.memory2.buffer import BackpressureBuffer
 
@@ -31,8 +31,8 @@ T = TypeVar("T")
 class Disposable:
     """Simple disposable that calls a function on dispose()."""
 
-    def __init__(self, fn: Any) -> None:
-        self._fn = fn
+    def __init__(self, fn: Callable[[], None]) -> None:
+        self._fn: Callable[[], None] | None = fn
 
     def dispose(self) -> None:
         if self._fn is not None:

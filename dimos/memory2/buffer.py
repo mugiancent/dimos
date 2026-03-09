@@ -17,7 +17,10 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections import deque
 import threading
-from typing import Generic, TypeVar
+from typing import TYPE_CHECKING, Generic, TypeVar
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 T = TypeVar("T")
 
@@ -48,7 +51,7 @@ class BackpressureBuffer(ABC, Generic[T]):
     @abstractmethod
     def __len__(self) -> int: ...
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[T]:
         """Yield items until the buffer is closed."""
         while True:
             try:
@@ -83,9 +86,10 @@ class KeepLast(BackpressureBuffer[T]):
                 if not self._cond.wait(timeout):
                     raise TimeoutError("take() timed out")
             item = self._item
+            assert item is not None
             self._item = None
             self._has_item = False
-            return item  # type: ignore[return-value]
+            return item
 
     def try_take(self) -> T | None:
         with self._cond:

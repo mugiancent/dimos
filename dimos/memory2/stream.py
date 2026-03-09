@@ -17,7 +17,7 @@ from __future__ import annotations
 from itertools import islice
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
-from dimos.memory2.backend import Backend
+from dimos.memory2.backend import Backend, Disposable
 from dimos.memory2.buffer import BackpressureBuffer, ClosedError, KeepLast
 from dimos.memory2.transform import FnTransformer, Transformer
 from dimos.memory2.type import (
@@ -57,7 +57,7 @@ class Stream(Generic[T]):
         *,
         query: StreamQuery = StreamQuery(),
         _live_buf: BackpressureBuffer[Observation[Any]] | None = None,
-        _live_sub: Any | None = None,
+        _live_sub: Disposable | None = None,
     ) -> None:
         self._source = source
         self._query = query
@@ -84,8 +84,9 @@ class Stream(Generic[T]):
 
     def _iter_transform(self) -> Iterator[Observation[T]]:
         """Iterate a transform source, applying query filters in Python."""
-        upstream_stream, xf = self._source  # type: ignore[misc]
-        it: Iterator[Observation[Any]] = xf(iter(upstream_stream))
+        assert isinstance(self._source, tuple)
+        upstream_stream, xf = self._source
+        it: Iterator[Observation[T]] = xf(iter(upstream_stream))
 
         # Apply filters as Python predicates
         filters = self._query.filters
@@ -109,7 +110,7 @@ class Stream(Generic[T]):
         if self._query.limit_val is not None:
             it = islice(it, self._query.limit_val)
 
-        return it  # type: ignore[return-value]
+        return it
 
     def _iter_with_live(self, backfill: Iterator[Observation[T]]) -> Iterator[Observation[T]]:
         """Yield backfill, then switch to live tail."""
@@ -130,7 +131,7 @@ class Stream(Generic[T]):
                 last_id = obs.id
                 if filters and not all(f.matches(obs) for f in filters):
                     continue
-                yield obs  # type: ignore[misc]
+                yield obs
         except (ClosedError, StopIteration):
             return
 

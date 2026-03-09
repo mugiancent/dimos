@@ -15,7 +15,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Generic, Protocol, TypeVar, runtime_checkable
+from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeVar, runtime_checkable
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 T = TypeVar("T")
 R = TypeVar("R")
@@ -58,16 +61,19 @@ class Observation(Generic[T]):
     pose: Any | None = None
     tags: dict[str, Any] = field(default_factory=dict)
     _data: T | _Unloaded = field(default=_UNLOADED, repr=False)
-    _loader: Any | None = field(default=None, repr=False)  # Callable[[], T]
+    _loader: Callable[[], T] | None = field(default=None, repr=False)
 
     @property
     def data(self) -> T:
-        if isinstance(self._data, _Unloaded):
+        val = self._data
+        if isinstance(val, _Unloaded):
             if self._loader is None:
                 raise LookupError("No data and no loader set on this observation")
-            self._data = self._loader()
+            loaded = self._loader()
+            self._data = loaded
             self._loader = None  # release closure
-        return self._data  # type: ignore[return-value]
+            return loaded
+        return val
 
     def derive(self, *, data: Any, **overrides: Any) -> Observation[Any]:
         """Create a new observation preserving ts/pose/tags, replacing data."""
@@ -160,10 +166,10 @@ class TagsFilter:
 class PredicateFilter:
     """Wraps an arbitrary predicate function for use with .filter()."""
 
-    fn: Any  # Callable[[Observation], bool] — Any to keep frozen hashable
+    fn: Callable[[Observation[Any]], bool]
 
     def matches(self, obs: Observation[Any]) -> bool:
-        return self.fn(obs)
+        return bool(self.fn(obs))
 
 
 # ── StreamQuery ─────────────────────────────────────────────────────

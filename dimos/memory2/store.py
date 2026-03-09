@@ -14,11 +14,14 @@
 
 from __future__ import annotations
 
-from typing import Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from dimos.core.resource import Resource
 from dimos.memory2.backend import Backend, ListBackend
 from dimos.memory2.stream import Stream
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator
 
 T = TypeVar("T")
 
@@ -52,7 +55,7 @@ class StreamNamespace:
         except KeyError:
             raise KeyError(name) from None
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[Stream[Any]]:
         return iter(self._session._streams.values())
 
     def __len__(self) -> int:
@@ -68,7 +71,7 @@ class StreamNamespace:
 class Session(Resource):
     """A session against a store. Creates and manages named streams."""
 
-    def __init__(self, backend_factory: Any) -> None:  # Callable[[str], Backend]
+    def __init__(self, backend_factory: Callable[[str], Backend[Any]]) -> None:
         self._backend_factory = backend_factory
         self._streams: dict[str, Stream[Any]] = {}
         self._backends: dict[str, Backend[Any]] = {}
@@ -79,7 +82,7 @@ class Session(Resource):
             backend = self._backend_factory(name)
             self._backends[name] = backend
             self._streams[name] = Stream(source=backend)
-        return self._streams[name]  # type: ignore[return-value]
+        return cast("Stream[T]", self._streams[name])
 
     def list_streams(self) -> list[Stream[Any]]:
         return list(self._streams.values())
