@@ -80,6 +80,7 @@ class ModuleConfig(BaseConfig):
     tf_transport: type[TFSpec] = LCMTF  # type: ignore[type-arg]
     frame_id_prefix: str | None = None
     frame_id: str | None = None
+    g: GlobalConfig = global_config
 
 
 ModuleConfigT = TypeVar("ModuleConfigT", bound=ModuleConfig, default=ModuleConfig)
@@ -104,9 +105,8 @@ class ModuleBase(Configurable[ModuleConfigT], Resource):
 
     rpc_calls: list[str] = []
 
-    def __init__(self, config_args: dict[str, Any], global_config: GlobalConfig):
+    def __init__(self, config_args: dict[str, Any]):
         super().__init__(**config_args)
-        self._global_config = global_config
         self._module_closed_lock = threading.Lock()
         self._loop, self._loop_thread = get_loop()
         self._disposables = CompositeDisposable()
@@ -419,7 +419,7 @@ class Module(ModuleBase[ModuleConfigT]):
                 if not hasattr(cls, name) or getattr(cls, name) is None:
                     setattr(cls, name, None)
 
-    def __init__(self, global_config: GlobalConfig = global_config, **kwargs: Any):
+    def __init__(self, **kwargs: Any):
         self.ref = None  # type: ignore[assignment]
 
         try:
@@ -437,7 +437,7 @@ class Module(ModuleBase[ModuleConfigT]):
                 inner, *_ = get_args(ann) or (Any,)
                 stream = In(inner, name, self)  # type: ignore[assignment]
                 setattr(self, name, stream)
-        super().__init__(config_args=kwargs, global_config=global_config)
+        super().__init__(config_args=kwargs)
 
     def __str__(self) -> str:
         return f"{self.__class__.__name__}"

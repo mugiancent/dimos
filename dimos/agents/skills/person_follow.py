@@ -23,7 +23,6 @@ from reactivex.disposable import Disposable
 from dimos.agents.agent import AgentSpec
 from dimos.agents.annotation import skill
 from dimos.core.core import rpc
-from dimos.core.global_config import GlobalConfig, global_config
 from dimos.core.module import Module, ModuleConfig
 from dimos.core.stream import In, Out
 from dimos.models.qwen.bbox import BBox
@@ -65,8 +64,8 @@ class PersonFollowSkillContainer(Module[Config]):
     _frequency: float = 20.0  # Hz - control loop frequency
     _max_lost_frames: int = 15  # number of frames to wait before declaring person lost
 
-    def __init__(self, global_config: GlobalConfig = global_config, **kwargs: Any) -> None:
-        super().__init__(global_config, **kwargs)
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
         self._latest_image: Image | None = None
         self._latest_pointcloud: PointCloud2 | None = None
         # Use VlModel to keep usage in this class generic
@@ -78,12 +77,12 @@ class PersonFollowSkillContainer(Module[Config]):
 
         # Use MuJoCo camera intrinsics in simulation mode
         camera_info = self.config.camera_info
-        if self._global_config.simulation:
+        if self.config.g.simulation:
             from dimos.robot.unitree.mujoco_connection import MujocoConnection
 
             camera_info = MujocoConnection.camera_info_static
 
-        self._visual_servo = VisualServoing2D(camera_info, self._global_config.simulation)
+        self._visual_servo = VisualServoing2D(camera_info, self.config.g.simulation)
         self._detection_navigation = DetectionNavigation(self.tf, camera_info)
 
     @rpc

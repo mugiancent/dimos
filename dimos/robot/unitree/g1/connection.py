@@ -15,11 +15,11 @@
 
 from typing import TYPE_CHECKING, Any
 
+from pydantic import Field
 from reactivex.disposable import Disposable
 
 from dimos import spec
 from dimos.core.core import rpc
-from dimos.core.global_config import GlobalConfig, global_config
 from dimos.core.module import Module, ModuleConfig
 from dimos.core.module_coordinator import ModuleCoordinator
 from dimos.core.stream import In
@@ -34,34 +34,23 @@ logger = setup_logger()
 
 
 class G1Config(ModuleConfig):
-    ip: str | None = None
-    connection_type: str | None = None
+    ip: str = Field(default_factory=lambda m: m["g"].robot_ip)
+    connection_type: str = Field(default_factory=lambda m: m["g"].unitree_connection_type)
 
 
 class G1Connection(Module[G1Config]):
     default_config = G1Config
 
     cmd_vel: In[Twist]
-    connection_type: str | None = None
-
-    connection: UnitreeWebRTCConnection | None
-
-    def __init__(self, global_config: GlobalConfig = global_config, **kwargs: Any) -> None:
-        super().__init__(global_config, **kwargs)
-        self.ip = self._global_config.robot_ip if self.config.ip is None else self.config.ip
-        self.connection_type = (
-            self.config.connection_type or self._global_config.unitree_connection_type
-        )
-        self.connection = None
+    connection: UnitreeWebRTCConnection | None = None
 
     @rpc
     def start(self) -> None:
         super().start()
 
-        match self.connection_type:
+        match self.config.connection_type:
             case "webrtc":
-                assert self.ip is not None, "IP address must be provided"
-                self.connection = UnitreeWebRTCConnection(self.ip)
+                self.connection = UnitreeWebRTCConnection(self.config.ip)
             case "replay":
                 raise ValueError("Replay connection not implemented for G1 robot")
             case "mujoco":
@@ -69,7 +58,7 @@ class G1Connection(Module[G1Config]):
                     "This module does not support simulation, use G1SimConnection instead"
                 )
             case _:
-                raise ValueError(f"Unknown connection type: {self.connection_type}")
+                raise ValueError(f"Unknown connection type: {self.config.connection_type}")
 
         assert self.connection is not None
         self.connection.start()

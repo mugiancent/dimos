@@ -29,7 +29,6 @@ from numpy.typing import NDArray
 from reactivex.disposable import Disposable
 
 from dimos.core.core import rpc
-from dimos.core.global_config import GlobalConfig, global_config
 from dimos.core.module import Module, ModuleConfig
 from dimos.core.stream import In, Out
 from dimos.msgs.geometry_msgs import Pose, Quaternion, Transform, Vector3
@@ -73,7 +72,7 @@ class ObjectTracking(Module[ObjectTrackingConfig]):
 
     default_config = ObjectTrackingConfig
 
-    def __init__(self, global_config: GlobalConfig = global_config, **kwargs: Any) -> None:
+    def __init__(self, **kwargs: Any) -> None:
         """
         Initialize an object tracking module using OpenCV's CSRT tracker with ORB re-ID.
 
@@ -85,7 +84,7 @@ class ObjectTracking(Module[ObjectTrackingConfig]):
                                  tracking is stopped.
         """
         # Call parent Module init
-        super().__init__(global_config, **kwargs)
+        super().__init__(**kwargs)
 
         self.camera_intrinsics = None
 

@@ -21,7 +21,6 @@ from reactivex import interval
 from reactivex.disposable import Disposable
 
 from dimos.core.core import rpc
-from dimos.core.global_config import GlobalConfig, global_config
 from dimos.core.module import Module, ModuleConfig
 from dimos.core.module_coordinator import ModuleCoordinator
 from dimos.core.stream import In, Out
@@ -50,21 +49,18 @@ class Map(Module[MapConfig]):
     global_costmap: Out[OccupancyGrid]
 
     _point_cloud_accumulator: PointCloudAccumulator
-    _global_config: GlobalConfig
     _preloaded_occupancy: OccupancyGrid | None = None
 
-    def __init__(self, global_config: GlobalConfig = global_config, **kwargs: Any) -> None:
+    def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.voxel_size = self.config.voxel_size
         self.cost_resolution = self.config.cost_resolution
         self.global_publish_interval = self.config.global_publish_interval
         self.min_height = self.config.min_height
         self.max_height = self.config.max_height
-        self._point_cloud_accumulator = GeneralPointCloudAccumulator(
-            self.voxel_size, self._global_config
-        )
+        self._point_cloud_accumulator = GeneralPointCloudAccumulator(self.voxel_size, self.config.g)
 
-        if self._global_config.simulation:
+        if self.config.g.simulation:
             self.min_height = 0.3
 
     @rpc
@@ -107,9 +103,9 @@ class Map(Module[MapConfig]):
         )
 
         # When debugging occupancy navigation, load a predefined occupancy grid.
-        if self._global_config.mujoco_global_costmap_from_occupancy:
+        if self.config.g.mujoco_global_costmap_from_occupancy:
             if self._preloaded_occupancy is None:
-                path = Path(self._global_config.mujoco_global_costmap_from_occupancy)
+                path = Path(self.config.g.mujoco_global_costmap_from_occupancy)
                 self._preloaded_occupancy = OccupancyGrid.from_path(path)
             occupancygrid = self._preloaded_occupancy
 

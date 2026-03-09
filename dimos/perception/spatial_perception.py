@@ -33,7 +33,6 @@ from dimos.agents_deprecated.memory.spatial_vector_db import SpatialVectorDB
 from dimos.agents_deprecated.memory.visual_memory import VisualMemory
 from dimos.constants import DIMOS_PROJECT_ROOT
 from dimos.core.core import rpc
-from dimos.core.global_config import GlobalConfig, global_config
 from dimos.core.module import Module, ModuleConfig
 from dimos.core.module_coordinator import ModuleCoordinator
 from dimos.core.stream import In
@@ -85,7 +84,7 @@ class SpatialMemory(Module[SpatialConfig]):
     # LCM inputs
     color_image: In[Image]
 
-    def __init__(self, global_config: GlobalConfig = global_config, **kwargs: Any) -> None:
+    def __init__(self, **kwargs: Any) -> None:
         """
         Initialize the spatial perception system.
 
@@ -99,7 +98,7 @@ class SpatialMemory(Module[SpatialConfig]):
             visual_memory: Optional VisualMemory instance for storing images
             output_dir: Directory for storing visual memory data if visual_memory is not provided
         """
-        super().__init__(global_config, **kwargs)
+        super().__init__(**kwargs)
 
         self.collection_name = self.config.collection_name
         self.embedding_model = self.config.embedding_model

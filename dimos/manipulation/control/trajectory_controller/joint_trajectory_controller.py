@@ -34,7 +34,6 @@ import time
 from typing import Any
 
 from dimos.core.core import rpc
-from dimos.core.global_config import GlobalConfig, global_config
 from dimos.core.module import Module, ModuleConfig
 from dimos.core.stream import In, Out
 from dimos.msgs.sensor_msgs import JointCommand, JointState, RobotState
@@ -80,8 +79,8 @@ class JointTrajectoryController(Module[JointTrajectoryControllerConfig]):
     # Output topics
     joint_position_command: Out[JointCommand] = None  # type: ignore[assignment]  # To arm driver
 
-    def __init__(self, global_config: GlobalConfig = global_config, **kwargs: Any) -> None:
-        super().__init__(global_config, **kwargs)
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
 
         # State machine
         self._state = TrajectoryState.IDLE

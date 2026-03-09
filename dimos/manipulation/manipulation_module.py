@@ -32,7 +32,6 @@ from typing import TYPE_CHECKING, Any, TypeAlias
 
 from dimos.agents.annotation import skill
 from dimos.core.core import rpc
-from dimos.core.global_config import GlobalConfig, global_config
 from dimos.core.module import Module, ModuleConfig
 from dimos.core.stream import In
 from dimos.manipulation.planning import (
@@ -107,8 +106,8 @@ class ManipulationModule(Module[ManipulationModuleConfig]):
     # Input: Joint state from coordinator (for world sync)
     joint_state: In[JointState]
 
-    def __init__(self, global_config: GlobalConfig = global_config, **kwargs: Any) -> None:
-        super().__init__(global_config, **kwargs)
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
 
         # State machine
         self._state = ManipulationState.IDLE

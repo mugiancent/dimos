@@ -31,7 +31,6 @@ from dimos.agents.annotation import skill
 from dimos.constants import DIMOS_PROJECT_ROOT
 from dimos.core.core import rpc
 from dimos.core.docker_runner import DockerModule as DockerRunner
-from dimos.core.global_config import GlobalConfig, global_config
 from dimos.core.stream import In
 from dimos.manipulation.grasping.graspgen_module import GraspGenModule
 from dimos.manipulation.manipulation_module import (
@@ -89,8 +88,8 @@ class PickAndPlaceModule(ManipulationModule):
     # Input: Objects from perception (for obstacle integration)
     objects: In[list[DetObject]]
 
-    def __init__(self, global_config: GlobalConfig = global_config, **kwargs: Any) -> None:
-        super().__init__(global_config, **kwargs)
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
 
         # GraspGen Docker runner (lazy initialized on first generate_grasps call)
         self._graspgen: DockerRunner | None = None

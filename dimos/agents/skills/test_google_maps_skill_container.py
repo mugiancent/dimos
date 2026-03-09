@@ -19,7 +19,6 @@ from langchain_core.messages import HumanMessage
 import pytest
 
 from dimos.agents.skills.google_maps_skill_container import GoogleMapsSkillContainer
-from dimos.core.global_config import GlobalConfig, global_config
 from dimos.core.module import Module
 from dimos.core.stream import Out
 from dimos.mapping.google_maps.types import Coordinates, LocationContext, Position
@@ -41,8 +40,8 @@ class FakeLocationClient:
 
 
 class MockedWhereAmISkill(GoogleMapsSkillContainer):
-    def __init__(self, global_config: GlobalConfig = global_config, **kwargs: Any):
-        Module.__init__(self, global_config, **kwargs)  # Skip GoogleMapsSkillContainer's __init__.
+    def __init__(self, **kwargs: Any):
+        Module.__init__(self, **kwargs)  # Skip GoogleMapsSkillContainer's __init__.
         self._client = FakeLocationClient()
         self._latest_location = LatLon(lat=37.782654, lon=-122.413273)
         self._started = True
@@ -64,8 +63,8 @@ class FakePositionClient:
 
 
 class MockedPositionSkill(GoogleMapsSkillContainer):
-    def __init__(self, global_config: GlobalConfig = global_config, **kwargs: Any):
-        Module.__init__(self, global_config, **kwargs)
+    def __init__(self, **kwargs: Any):
+        Module.__init__(self, **kwargs)
         self._client = FakePositionClient()
         self._latest_location = LatLon(lat=37.782654, lon=-122.413273)
         self._started = True

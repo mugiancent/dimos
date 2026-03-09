@@ -42,7 +42,6 @@ except ImportError:
 
 from dimos.control.examples.cartesian_ik_jogger import JogState
 from dimos.core.core import rpc
-from dimos.core.global_config import GlobalConfig, global_config
 from dimos.core.module import Module, ModuleConfig
 from dimos.core.stream import Out
 from dimos.msgs.geometry_msgs import PoseStamped
@@ -83,8 +82,8 @@ class KeyboardTeleopModule(Module[KeyboardTeleopConfig]):
     _stop_event: threading.Event
     _thread: threading.Thread | None = None
 
-    def __init__(self, global_config: GlobalConfig = global_config, **kwargs: Any) -> None:
-        super().__init__(global_config, **kwargs)
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
         self._stop_event = threading.Event()
 
     @rpc

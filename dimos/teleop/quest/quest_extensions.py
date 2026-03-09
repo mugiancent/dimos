@@ -24,7 +24,6 @@ from typing import Any
 
 from pydantic import Field
 
-from dimos.core.global_config import GlobalConfig, global_config
 from dimos.core.stream import Out
 from dimos.msgs.geometry_msgs import PoseStamped, TwistStamped
 from dimos.teleop.quest.quest_teleop_module import Hand, QuestTeleopConfig, QuestTeleopModule
@@ -105,8 +104,8 @@ class ArmTeleopModule(QuestTeleopModule[ArmTeleopConfig]):
 
     default_config = ArmTeleopConfig
 
-    def __init__(self, global_config: GlobalConfig = global_config, **kwargs: Any) -> None:
-        super().__init__(global_config, **kwargs)
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
 
         self._task_names: dict[Hand, str] = {
             Hand[k.upper()]: v for k, v in self.config.task_names.items()

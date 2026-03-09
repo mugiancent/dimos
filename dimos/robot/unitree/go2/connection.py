@@ -17,6 +17,7 @@ from threading import Thread
 import time
 from typing import TYPE_CHECKING, Any, Protocol
 
+from pydantic import Field
 from reactivex.disposable import Disposable
 from reactivex.observable import Observable
 import rerun.blueprint as rrb
@@ -24,7 +25,6 @@ import rerun.blueprint as rrb
 from dimos import spec
 from dimos.agents.annotation import skill
 from dimos.core.core import rpc
-from dimos.core.global_config import GlobalConfig, global_config
 from dimos.core.module import Module, ModuleConfig
 from dimos.core.module_coordinator import ModuleCoordinator
 from dimos.core.stream import In, Out
@@ -50,7 +50,7 @@ logger = logging.getLogger(__name__)
 
 
 class ConnectionConfig(ModuleConfig):
-    ip: str | None = None
+    ip: str = Field(default_factory=lambda m: m["g"].robot_ip)
 
 
 class Go2ConnectionProtocol(Protocol):
@@ -176,22 +176,19 @@ class GO2Connection(Module[ConnectionConfig], spec.Camera, spec.Pointcloud):
             ),
         ]
 
-    def __init__(self, global_config: GlobalConfig = global_config, **kwargs: Any) -> None:
-        super().__init__(global_config, **kwargs)
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
 
-        ip = self.config.ip or self._global_config.robot_ip
+        connection_type = self.config.g.unitree_connection_type
 
-        connection_type = self._global_config.unitree_connection_type
-
-        if ip in ["fake", "mock", "replay"] or connection_type == "replay":
+        if self.config.ip in ["fake", "mock", "replay"] or connection_type == "replay":
             self.connection = ReplayConnection()
-        elif ip == "mujoco" or connection_type == "mujoco":
+        elif self.config.ip == "mujoco" or connection_type == "mujoco":
             from dimos.robot.unitree.mujoco_connection import MujocoConnection
 
-            self.connection = MujocoConnection(self._global_config)
+            self.connection = MujocoConnection(self.config.g)
         else:
-            assert ip is not None, "IP address must be provided"
-            self.connection = UnitreeWebRTCConnection(ip)
+            self.connection = UnitreeWebRTCConnection(self.config.ip)
 
     @rpc
     def record(self, recording_name: str) -> None:

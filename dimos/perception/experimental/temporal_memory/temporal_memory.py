@@ -34,7 +34,6 @@ from reactivex.disposable import Disposable
 
 from dimos.agents.annotation import skill
 from dimos.core.core import rpc
-from dimos.core.global_config import GlobalConfig, global_config
 from dimos.core.module import Module, ModuleConfig
 from dimos.core.stream import In
 from dimos.models.vl.base import VlModel
@@ -114,8 +113,8 @@ class TemporalMemory(Module[TemporalMemoryConfig]):
     color_image: In[Image]
     default_config = TemporalMemoryConfig
 
-    def __init__(self, global_config: GlobalConfig = global_config, **kwargs: Any) -> None:
-        super().__init__(global_config, **kwargs)
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
 
         self._vlm = self.config.vlm  # Can be None for blueprint usage
 

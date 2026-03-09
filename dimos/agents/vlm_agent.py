@@ -19,7 +19,6 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from dimos.agents.system_prompt import SYSTEM_PROMPT
 from dimos.core.core import rpc
-from dimos.core.global_config import GlobalConfig, global_config
 from dimos.core.module import Module, ModuleConfig
 from dimos.core.stream import In, Out
 from dimos.msgs.sensor_msgs import Image
@@ -45,8 +44,8 @@ class VLMAgent(Module[VLMAgentConfig]):
     query_stream: In[HumanMessage]
     answer_stream: Out[AIMessage]
 
-    def __init__(self, global_config: GlobalConfig = global_config, **kwargs: Any) -> None:
-        super().__init__(global_config, **kwargs)
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
 
         if self.config.model.startswith("ollama:"):
             from dimos.agents.ollama_agent import ensure_ollama_model

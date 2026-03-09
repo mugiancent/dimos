@@ -18,7 +18,6 @@ from langchain_core.messages import HumanMessage
 import pytest
 
 from dimos.agents.annotation import skill
-from dimos.core.global_config import GlobalConfig, global_config
 from dimos.core.module import Module
 from dimos.msgs.sensor_msgs import Image
 from dimos.utils.data import get_data
@@ -79,8 +78,8 @@ def test_can_call_again_on_error(agent_setup):
 
 
 class MultipleTools(Module):
-    def __init__(self, global_config: GlobalConfig = global_config, **kwargs: Any):
-        super().__init__(global_config, **kwargs)
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)
         self._people = {"Ben": "office", "Bob": "garage"}
 
     @skill

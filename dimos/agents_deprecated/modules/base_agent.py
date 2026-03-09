@@ -21,7 +21,6 @@ from dimos.agents_deprecated.agent_message import AgentMessage
 from dimos.agents_deprecated.agent_types import AgentResponse
 from dimos.agents_deprecated.memory.base import AbstractAgentSemanticMemory
 from dimos.core.core import rpc
-from dimos.core.global_config import GlobalConfig, global_config
 from dimos.core.module import Module, ModuleConfig
 from dimos.core.stream import In, Out
 from dimos.skills.skills import AbstractSkill, SkillLibrary
@@ -62,7 +61,7 @@ class BaseAgentModule(BaseAgent, Module[BaseAgentConfig]):  # type: ignore[misc]
     message_in: In[AgentMessage]  # Primary input for AgentMessage
     response_out: Out[AgentResponse]  # Output AgentResponse objects
 
-    def __init__(self, global_config: GlobalConfig = global_config, **kwargs: Any) -> None:
+    def __init__(self, **kwargs: Any) -> None:
         """Initialize the agent module.
 
         Args:
@@ -80,7 +79,7 @@ class BaseAgentModule(BaseAgent, Module[BaseAgentConfig]):  # type: ignore[misc]
             **kwargs: Additional arguments passed to Module
         """
         # Initialize Module first (important for DimOS)
-        Module.__init__(self, global_config, **kwargs)
+        Module.__init__(self, **kwargs)
 
         # Initialize BaseAgent with all functionality
         BaseAgent.__init__(

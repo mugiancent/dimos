@@ -34,7 +34,6 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from dimos.core.core import rpc
-from dimos.core.global_config import GlobalConfig, global_config
 from dimos.core.module import Module, ModuleConfig
 from dimos.core.stream import Out
 from dimos.msgs.geometry_msgs import Twist, TwistStamped, Vector3
@@ -74,8 +73,8 @@ class PhoneTeleopModule(Module[PhoneTeleopConfig]):
     # Initialization
     # -------------------------------------------------------------------------
 
-    def __init__(self, global_config: GlobalConfig = global_config, **kwargs: Any) -> None:
-        super().__init__(global_config, **kwargs)
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
 
         self._is_engaged: bool = False
         self._teleop_button: bool = False

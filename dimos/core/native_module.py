@@ -54,7 +54,6 @@ from typing import IO, Any
 from pydantic import Field
 
 from dimos.core.core import rpc
-from dimos.core.global_config import GlobalConfig, global_config
 from dimos.core.module import Module, ModuleConfig
 from dimos.utils.logging_config import setup_logger
 
@@ -133,8 +132,8 @@ class NativeModule(Module[_NativeConfig]):
     _watchdog: threading.Thread | None = None
     _stopping: bool = False
 
-    def __init__(self, global_config: GlobalConfig = global_config, **kwargs: Any) -> None:
-        super().__init__(global_config, **kwargs)
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
         self._resolve_paths()
 
     @rpc

@@ -32,7 +32,6 @@ import time
 from typing import Any
 
 from dimos.core.core import rpc
-from dimos.core.global_config import GlobalConfig, global_config
 from dimos.core.module import Module, ModuleConfig
 from dimos.core.stream import In, Out
 from dimos.msgs.geometry_msgs import Pose, PoseStamped, Quaternion, Twist, Vector3
@@ -112,7 +111,7 @@ class CartesianMotionController(Module[CartesianMotionControllerConfig]):
     cartesian_velocity: Out[Twist] = None  # type: ignore[assignment]
     current_pose: Out[PoseStamped] = None  # type: ignore[assignment]
 
-    def __init__(self, global_config: GlobalConfig = global_config, **kwargs: Any) -> None:
+    def __init__(self, **kwargs: Any) -> None:
         """
         Initialize the Cartesian motion controller.
 
@@ -120,7 +119,7 @@ class CartesianMotionController(Module[CartesianMotionControllerConfig]):
             arm_driver: (Optional) Hardware driver reference (legacy mode).
                        When using blueprints, this is resolved automatically via rpc_calls.
         """
-        super().__init__(global_config, **kwargs)
+        super().__init__(**kwargs)
 
         # Hardware driver reference - set via arm_driver param (legacy) or RPC wiring (blueprint)
         self._arm_driver_legacy = self.config.arm_driver

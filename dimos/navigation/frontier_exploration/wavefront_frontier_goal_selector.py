@@ -31,7 +31,6 @@ from reactivex.disposable import Disposable
 
 from dimos.agents.annotation import skill
 from dimos.core.core import rpc
-from dimos.core.global_config import GlobalConfig, global_config
 from dimos.core.module import Module, ModuleConfig
 from dimos.core.stream import In, Out
 from dimos.mapping.occupancy.inflation import simple_inflate
@@ -118,7 +117,7 @@ class WavefrontFrontierExplorer(Module[WavefrontConfig]):
     # LCM outputs
     goal_request: Out[PoseStamped]
 
-    def __init__(self, global_config: GlobalConfig = global_config, **kwargs: Any) -> None:
+    def __init__(self, **kwargs: Any) -> None:
         """
         Initialize the frontier explorer.
 
@@ -129,7 +128,7 @@ class WavefrontFrontierExplorer(Module[WavefrontConfig]):
             info_gain_threshold: Minimum percentage increase in costmap information required to continue exploration (0.05 = 5%)
             num_no_gain_attempts: Maximum number of consecutive attempts with no information gain
         """
-        super().__init__(global_config, **kwargs)
+        super().__init__(**kwargs)
         self._cache = FrontierCache()
         self.explored_goals = []  # type: ignore[var-annotated]  # list of explored goals
         self.exploration_direction = Vector3(0.0, 0.0, 0.0)  # current exploration direction

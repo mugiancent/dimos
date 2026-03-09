@@ -194,6 +194,7 @@ class Worker:
             raise RuntimeError("Worker process not started")
 
         kwargs = kwargs or {}
+        kwargs["g"] = global_config
         module_id = _module_ids.next()
 
         # Send deploy_module request to the worker process
@@ -201,7 +202,6 @@ class Worker:
             "type": "deploy_module",
             "module_id": module_id,
             "module_class": module_class,
-            "global_config": global_config,
             "kwargs": kwargs,
         }
         with self._lock:
@@ -304,10 +304,9 @@ def _worker_loop(conn: Connection, instances: dict[int, Any], worker_id: int) ->
 
             if req_type == "deploy_module":
                 module_class = request["module_class"]
-                global_config = request["global_config"]
-                kwargs = request.get("kwargs", {})
+                kwargs = request["kwargs"]
                 module_id = request["module_id"]
-                instance = module_class(global_config, **kwargs)
+                instance = module_class(**kwargs)
                 instances[module_id] = instance
                 response["result"] = module_id
 

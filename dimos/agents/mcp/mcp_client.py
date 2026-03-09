@@ -29,7 +29,6 @@ from reactivex.disposable import Disposable
 from dimos.agents.system_prompt import SYSTEM_PROMPT
 from dimos.agents.utils import pretty_print_langchain_message
 from dimos.core.core import rpc
-from dimos.core.global_config import GlobalConfig, global_config
 from dimos.core.module import Module, ModuleConfig
 from dimos.core.rpc_client import RPCClient
 from dimos.core.stream import In, Out
@@ -61,8 +60,8 @@ class McpClient(Module[McpClientConfig]):
     _http_client: httpx.Client
     _seq_ids: SequentialIds
 
-    def __init__(self, global_config: GlobalConfig = global_config, **kwargs: Any) -> None:
-        super().__init__(global_config, **kwargs)
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
         self._lock = RLock()
         self._state_graph = None
         self._message_queue = Queue()

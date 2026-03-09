@@ -46,7 +46,6 @@ _COMMAND_CENTER_DIR = (
 )
 
 from dimos.core.core import rpc
-from dimos.core.global_config import GlobalConfig, global_config
 from dimos.core.module import Module, ModuleConfig
 from dimos.core.stream import In, Out
 from dimos.mapping.occupancy.gradient import gradient
@@ -103,14 +102,14 @@ class WebsocketVisModule(Module[WebsocketConfig]):
     cmd_vel: Out[Twist]
     movecmd_stamped: Out[TwistStamped]
 
-    def __init__(self, global_config: GlobalConfig = global_config, **kwargs: Any) -> None:
+    def __init__(self, **kwargs: Any) -> None:
         """Initialize the WebSocket visualization module.
 
         Args:
             port: Port to run the web server on
             cfg: Optional global config for viewer backend settings
         """
-        super().__init__(global_config, **kwargs)
+        super().__init__(**kwargs)
         self._uvicorn_server_thread: threading.Thread | None = None
         self.sio: socketio.AsyncServer | None = None
         self.app = None
@@ -155,7 +154,7 @@ class WebsocketVisModule(Module[WebsocketConfig]):
 
         # Auto-open browser only for rerun-web (dashboard with Rerun iframe + command center)
         # For rerun and foxglove, users access the command center manually if needed
-        if self._global_config.viewer_backend == "rerun-web":
+        if self.config.g.viewer_backend == "rerun-web":
             url = f"http://localhost:{self.config.port}/"
             logger.info(f"Dimensional Command Center: {url}")
 
@@ -232,7 +231,7 @@ class WebsocketVisModule(Module[WebsocketConfig]):
         async def serve_index(request):  # type: ignore[no-untyped-def]
             """Serve appropriate HTML based on viewer mode."""
             # If running native Rerun, redirect to standalone command center
-            if self._global_config.viewer_backend != "rerun-web":
+            if self.config.g.viewer_backend != "rerun-web":
                 return RedirectResponse(url="/command-center")
 
             # Otherwise serve full dashboard with Rerun iframe

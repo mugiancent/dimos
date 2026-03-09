@@ -19,7 +19,6 @@ from pydantic import Field
 from reactivex import operators as ops
 
 from dimos.core.core import rpc
-from dimos.core.global_config import GlobalConfig, global_config
 from dimos.core.module import Module, ModuleConfig
 from dimos.core.stream import In, Out
 from dimos.mapping.pointclouds.occupancy import (
@@ -44,9 +43,6 @@ class CostMapper(Module[Config]):
 
     global_map: In[PointCloud2]
     global_costmap: Out[OccupancyGrid]
-
-    def __init__(self, global_config: GlobalConfig = global_config, **kwargs: object) -> None:
-        super().__init__(global_config, **kwargs)
 
     @rpc
     def start(self) -> None:

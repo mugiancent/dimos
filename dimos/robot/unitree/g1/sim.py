@@ -16,12 +16,12 @@
 import threading
 from threading import Thread
 import time
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
+from pydantic import Field
 from reactivex.disposable import Disposable
 
 from dimos.core.core import rpc
-from dimos.core.global_config import GlobalConfig, global_config
 from dimos.core.module import Module, ModuleConfig
 from dimos.core.stream import In, Out
 from dimos.msgs.geometry_msgs import (
@@ -32,11 +32,9 @@ from dimos.msgs.geometry_msgs import (
     Vector3,
 )
 from dimos.msgs.sensor_msgs import CameraInfo, Image, PointCloud2
+from dimos.robot.unitree.mujoco_connection import MujocoConnection
 from dimos.robot.unitree.type.odometry import Odometry as SimOdometry
 from dimos.utils.logging_config import setup_logger
-
-if TYPE_CHECKING:
-    from dimos.robot.unitree.mujoco_connection import MujocoConnection
 
 logger = setup_logger()
 
@@ -61,7 +59,7 @@ def _camera_info_static() -> CameraInfo:
 
 
 class G1SimConfig(ModuleConfig):
-    ip: str | None = None
+    ip: str = Field(default_factory=lambda m: m["g"].robot_ip)
 
 
 class G1SimConnection(Module[G1SimConfig]):
@@ -72,13 +70,11 @@ class G1SimConnection(Module[G1SimConfig]):
     odom: Out[PoseStamped]
     color_image: Out[Image]
     camera_info: Out[CameraInfo]
-    ip: str | None
+    connection: MujocoConnection | None = None
     _camera_info_thread: Thread | None = None
 
-    def __init__(self, global_config: GlobalConfig = global_config, **kwargs: Any) -> None:
-        super().__init__(global_config, **kwargs)
-        self.ip = self._global_config.robot_ip if self.config.ip is None else self.config.ip
-        self.connection: MujocoConnection | None = None
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
         self._stop_event = threading.Event()
 
     @rpc
@@ -87,7 +83,7 @@ class G1SimConnection(Module[G1SimConfig]):
 
         from dimos.robot.unitree.mujoco_connection import MujocoConnection
 
-        self.connection = MujocoConnection(self._global_config)
+        self.connection = MujocoConnection(self.config.g)
         assert self.connection is not None
         self.connection.start()
 

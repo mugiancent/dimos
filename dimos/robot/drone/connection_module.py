@@ -26,7 +26,6 @@ from reactivex.disposable import CompositeDisposable, Disposable
 
 from dimos.agents.annotation import skill
 from dimos.core.core import rpc
-from dimos.core.global_config import GlobalConfig, global_config
 from dimos.core.module import Module, ModuleConfig
 from dimos.core.stream import In, Out
 from dimos.mapping.types import LatLon
@@ -79,7 +78,7 @@ class DroneConnectionModule(Module[Config]):
     _latest_status: dict[str, Any] | None = None
     _latest_status_lock: threading.RLock
 
-    def __init__(self, global_config: GlobalConfig = global_config, **kwargs: Any) -> None:
+    def __init__(self, **kwargs: Any) -> None:
         """Initialize drone connection module.
 
         Args:
@@ -87,6 +86,7 @@ class DroneConnectionModule(Module[Config]):
             video_port: UDP port for video stream
             outdoor: Use GPS only mode (no velocity integration)
         """
+        super().__init__(**kwargs)
         self.connection: MavlinkConnection | None = None
         self.video_stream: DJIDroneVideoStream | None = None
         self._latest_video_frame = None
@@ -95,7 +95,6 @@ class DroneConnectionModule(Module[Config]):
         self._latest_status_lock = threading.RLock()
         self._running = False
         self._telemetry_thread: threading.Thread | None = None
-        super().__init__(global_config, **kwargs)
 
     @rpc
     def start(self) -> None:

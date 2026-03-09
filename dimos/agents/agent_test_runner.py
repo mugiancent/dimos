@@ -22,7 +22,6 @@ from reactivex.disposable import Disposable
 
 from dimos.agents.agent import AgentSpec
 from dimos.core.core import rpc
-from dimos.core.global_config import GlobalConfig, global_config
 from dimos.core.module import Module, ModuleConfig
 from dimos.core.rpc_client import RPCClient
 from dimos.core.stream import In, Out
@@ -41,8 +40,8 @@ class AgentTestRunner(Module[Config]):
     finished: Out[bool]
     added: Out[bool]
 
-    def __init__(self, global_config: GlobalConfig = global_config, **kwargs: Any) -> None:
-        super().__init__(global_config, **kwargs)
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
         self._idle_event = Event()
         self._subscription_ready = Event()
         self._thread = Thread(target=self._thread_loop, daemon=True)

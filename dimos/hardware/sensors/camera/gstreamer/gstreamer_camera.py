@@ -23,7 +23,6 @@ from typing import Any
 import numpy as np
 
 from dimos.core.core import rpc
-from dimos.core.global_config import GlobalConfig, global_config
 from dimos.core.module import Module, ModuleConfig
 from dimos.core.stream import Out
 from dimos.msgs.sensor_msgs import Image, ImageFormat
@@ -59,7 +58,7 @@ class GstreamerCameraModule(Module[Config]):
 
     video: Out[Image]
 
-    def __init__(self, global_config: GlobalConfig = global_config, **kwargs: Any) -> None:
+    def __init__(self, **kwargs: Any) -> None:
         """Initialize the GStreamer TCP camera module.
 
         Args:
@@ -69,7 +68,7 @@ class GstreamerCameraModule(Module[Config]):
             timestamp_offset: Offset to add to timestamps (useful for clock synchronization)
             reconnect_interval: Seconds to wait before attempting reconnection
         """
-        super().__init__(global_config, **kwargs)
+        super().__init__(**kwargs)
         self.host = self.config.host
         self.port = self.config.port
         self.reconnect_interval = self.config.reconnect_interval

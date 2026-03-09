@@ -26,7 +26,6 @@ from typing import Any
 from reactivex.disposable import Disposable
 
 from dimos.core.core import rpc
-from dimos.core.global_config import GlobalConfig, global_config
 from dimos.core.module import Module, ModuleConfig
 from dimos.core.stream import In, Out
 from dimos.msgs.geometry_msgs import PoseStamped, Twist, TwistStamped
@@ -77,7 +76,7 @@ class B1ConnectionModule(Module[B1ConnectionConfig]):
     ros_odom_in: In[Odometry]
     ros_tf: In[TFMessage]
 
-    def __init__(self, global_config: GlobalConfig = global_config, **kwargs: Any) -> None:
+    def __init__(self, **kwargs: Any) -> None:
         """Initialize B1 connection module.
 
         Args:
@@ -85,7 +84,7 @@ class B1ConnectionModule(Module[B1ConnectionConfig]):
             port: UDP port for joystick server
             test_mode: If True, print commands instead of sending UDP
         """
-        super().__init__(global_config, **kwargs)
+        super().__init__(**kwargs)
 
         self.ip = self.config.ip
         self.port = self.config.port
@@ -391,10 +390,10 @@ class B1ConnectionModule(Module[B1ConnectionConfig]):
 class MockB1ConnectionModule(B1ConnectionModule):
     """Test connection module that prints commands instead of sending UDP."""
 
-    def __init__(self, global_config: GlobalConfig = global_config, **kwargs: Any) -> None:  # type: ignore[no-untyped-def]
+    def __init__(self, **kwargs: Any) -> None:  # type: ignore[no-untyped-def]
         """Initialize test connection without creating socket."""
         kwargs["test_mode"] = True
-        super().__init__(global_config, **kwargs)
+        super().__init__(**kwargs)
 
     def _send_loop(self) -> None:
         """Override to provide better test output with timeout detection."""

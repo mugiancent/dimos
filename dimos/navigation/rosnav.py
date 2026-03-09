@@ -30,7 +30,6 @@ from reactivex.subject import Subject
 from dimos import spec
 from dimos.agents.annotation import skill
 from dimos.core.core import rpc
-from dimos.core.global_config import GlobalConfig, global_config
 from dimos.core.module import Module, ModuleConfig
 from dimos.core.module_coordinator import ModuleCoordinator
 from dimos.core.stream import In, Out
@@ -111,8 +110,8 @@ class ROSNav(
     _current_goal: PoseStamped | None = None
     _goal_reached: bool = False
 
-    def __init__(self, global_config: GlobalConfig = global_config, **kwargs: Any) -> None:
-        super().__init__(global_config, **kwargs)
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
 
         # Initialize RxPY Subjects for streaming data
         self._local_pointcloud_subject = Subject()
