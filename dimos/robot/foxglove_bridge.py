@@ -50,9 +50,9 @@ class FoxgloveBridge(Module[FoxgloveConfig]):
     def start(self) -> None:
         super().start()
 
-        # Skip if Rerun is the selected viewer backend
-        if self.config.g.viewer_backend.startswith("rerun"):
-            logger.info("Foxglove bridge skipped", viewer_backend=self.config.g.viewer_backend)
+        # Skip if Rerun is the selected viewer
+        if self.config.g.viewer.startswith("rerun"):
+            logger.info("Foxglove bridge skipped", viewer=self.config.g.viewer)
             return
 
         def run_bridge() -> None:

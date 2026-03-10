@@ -15,7 +15,7 @@
 import logging
 from threading import Thread
 import time
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 
 from pydantic import Field
 from reactivex.disposable import Disposable
@@ -25,6 +25,7 @@ import rerun.blueprint as rrb
 from dimos import spec
 from dimos.agents.annotation import skill
 from dimos.core.core import rpc
+from dimos.core.global_config import GlobalConfig
 from dimos.core.module import Module, ModuleConfig
 from dimos.core.module_coordinator import ModuleCoordinator
 from dimos.core.stream import In, Out
@@ -64,6 +65,8 @@ class Go2ConnectionProtocol(Protocol):
     def move(self, twist: Twist, duration: float = 0.0) -> bool: ...
     def standup(self) -> bool: ...
     def liedown(self) -> bool: ...
+    def balance_stand(self) -> bool: ...
+    def set_obstacle_avoidance(self, enabled: bool = True) -> None: ...
     def publish_request(self, topic: str, data: dict) -> dict: ...  # type: ignore[type-arg]
 
 
@@ -85,8 +88,22 @@ def _camera_info_static() -> CameraInfo:
     )
 
 
+def make_connection(ip: str | None, cfg: GlobalConfig) -> Go2ConnectionProtocol:
+    connection_type = cfg.unitree_connection_type
+
+    if ip in ("fake", "mock", "replay") or connection_type == "replay":
+        return ReplayConnection()
+    elif ip == "mujoco" or connection_type == "mujoco":
+        from dimos.robot.unitree.mujoco_connection import MujocoConnection
+
+        return MujocoConnection(cfg)
+    else:
+        assert ip is not None, "IP address must be provided"
+        return UnitreeWebRTCConnection(ip)
+
+
 class ReplayConnection(UnitreeWebRTCConnection):
-    dir_name = "unitree_go2_bigoffice"
+    dir_name = "go2_sf_office"
 
     # we don't want UnitreeWebRTCConnection to init
     def __init__(  # type: ignore[no-untyped-def]
@@ -95,7 +112,7 @@ class ReplayConnection(UnitreeWebRTCConnection):
     ) -> None:
         get_data(self.dir_name)
         self.replay_config = {
-            "loop": kwargs.get("loop"),
+            "loop": kwargs.get("loop", True),
             "seek": kwargs.get("seek"),
             "duration": kwargs.get("duration"),
         }
@@ -111,6 +128,12 @@ class ReplayConnection(UnitreeWebRTCConnection):
 
     def liedown(self) -> bool:
         return True
+
+    def balance_stand(self) -> bool:
+        return True
+
+    def set_obstacle_avoidance(self, enabled: bool = True) -> None:
+        pass
 
     @simple_mcache
     def lidar_stream(self):  # type: ignore[no-untyped-def]
@@ -151,8 +174,11 @@ class ReplayConnection(UnitreeWebRTCConnection):
         return {"status": "ok", "message": "Fake publish"}
 
 
-class GO2Connection(Module[ConnectionConfig], spec.Camera, spec.Pointcloud):
-    default_config = ConnectionConfig
+_Config = TypeVar("_Config", bound=ConnectionConfig)
+
+
+class GO2Connection(Module[_Config], spec.Camera, spec.Pointcloud):
+    default_config = ConnectionConfig  # type: ignore[assignment]
 
     cmd_vel: In[Twist]
     pointcloud: Out[PointCloud2]
@@ -178,17 +204,7 @@ class GO2Connection(Module[ConnectionConfig], spec.Camera, spec.Pointcloud):
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
-
-        connection_type = self.config.g.unitree_connection_type
-
-        if self.config.ip in ["fake", "mock", "replay"] or connection_type == "replay":
-            self.connection = ReplayConnection()
-        elif self.config.ip == "mujoco" or connection_type == "mujoco":
-            from dimos.robot.unitree.mujoco_connection import MujocoConnection
-
-            self.connection = MujocoConnection(self.config.g)
-        else:
-            self.connection = UnitreeWebRTCConnection(self.config.ip)
+        self.connection = make_connection(self.config.ip, self.config.g)
 
     @rpc
     def record(self, recording_name: str) -> None:
@@ -223,6 +239,10 @@ class GO2Connection(Module[ConnectionConfig], spec.Camera, spec.Pointcloud):
         self._camera_info_thread.start()
 
         self.standup()
+        time.sleep(3)
+        self.connection.balance_stand()
+        self.connection.set_obstacle_avoidance(self.config.g.obstacle_avoidance)
+
         # self.record("go2_bigoffice")
 
     @rpc
@@ -331,4 +351,4 @@ def deploy(dimos: ModuleCoordinator, ip: str, prefix: str = "") -> "ModuleProxy"
     return connection
 
 
-__all__ = ["GO2Connection", "deploy", "go2_connection"]
+__all__ = ["GO2Connection", "deploy", "go2_connection", "make_connection"]

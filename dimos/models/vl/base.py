@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 import json
 import logging
 import sys
+from typing import Any
 import warnings
 
 from dimos.core.resource import Resource
@@ -256,7 +257,7 @@ class VlModel(Captioner, Resource, Configurable[_VlConfig]):
         return extract_json(response)  # type: ignore[return-value]
 
     def query_detections(
-        self, image: Image, query: str, **kwargs: object
+        self, image: Image, query: str, **kwargs: Any
     ) -> ImageDetections2D[Detection2DBBox]:
         # Here to prevent unwanted imports in the file.
         from dimos.perception.detection.type import ImageDetections2D
