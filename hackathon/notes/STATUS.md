@@ -36,30 +36,42 @@
 - Skills Feed (col2, row1), Claude (col2, row2), MCP Skills (col2, row3)
 - Empty right column (col3, rows 1-3) — reserved for Phase 4
 
-## Phase 4: People Intelligence — NOT STARTED
+## Phase 4: People Intelligence — DONE
 
-This is the core surveillance feature.
+- [x] `PeopleMonitor` — subscribes to Detection2DModule (YOLO 2Hz) via LCM
+- [x] Person ReID via OSNet (EmbeddingIDSystem) for persistent IDs across track resets
+- [x] Activity classification per person crop via Claude Haiku (every 10s)
+- [x] Dashboard panel: person cards in col3 — thumbnail, ID, activity, activity log, "Xs ago"
+- [x] SocketIO streaming (`person_sighting` events) with rAF-throttled rendering
+- [x] Blob URL management to prevent memory leaks, max 20 cards with LRU eviction
+- [x] Bbox area filter (MIN_BBOX_AREA=2000) to reject small false positives
+- [x] Tests: 40 tests in `hackathon/tests/test_people_monitor.py`
 
-- [ ] Wire YOLO person detection to dashboard (perception stack already exists)
-- [ ] VLM activity classification per person crop ("studying", "cooking", "on phone")
-- [ ] Person identification via clothing/appearance descriptions
-- [ ] Log sightings + activities to temporal memory entity graph (EntityGraphDB exists)
-- [ ] Dashboard panel: person cards in empty col3 — name/label, last seen time, current activity, thumbnail
+### Bugs fixed (Phase 4):
+- ROS round-trip drops `name` field → filter by `class_id == 0` instead of `d.name == "person"`
+- ROS round-trip drops `confidence` (always 0.00) → cannot filter by confidence
+- PeopleMonitor logger (`hackathon.people_monitor`) not in DimOS config → use `setup_logger()`
+- Image transport mismatch: blueprint uses LCMTransport, PeopleMonitor used pSHMTransport → fixed
 
-### Existing code to leverage:
-- `dimos/perception/detection/person_tracker.py` — PersonTracker module (YOLO → 3D pose)
-- `dimos/perception/experimental/temporal_memory/temporal_memory.py` — VideoRAG-style entity memory
-- `dimos/perception/experimental/temporal_memory/entity_graph_db.py` — SQLite graph DB (relations, distances, semantic)
-- `dimos/perception/spatial_perception.py` — ChromaDB + CLIP spatial memory
-- `dimos/perception/detection/reid/` — Re-identification embeddings
+## Phase 5: Surveillance Query Engine — DONE
 
-## Phase 5: Query Engine — NOT STARTED
+- [x] `SurveillanceStore` — in-process, persists activity observations to `assets/surveillance/`
+  - `observations.jsonl` — timestamped activity log (throttled: 1 per 5s or on activity change)
+  - `roster.json` — current person states (ID, activity, first/last seen)
+- [x] `SurveillanceSkill` — MCP-exposed Module with two skills:
+  - `query_surveillance(question)` — answers natural-language questions via Claude Haiku + observation data
+  - `list_people()` — returns current roster summary
+- [x] Wired into WebsocketVisModule: PeopleMonitor → SurveillanceStore → disk ← SurveillanceSkill
+- [x] Blueprint renamed: `unitree-go2-agentic-mcp-surveillance` (dropped temporal_memory)
+- [x] API key pattern: `os.getenv("ANTHROPIC_API_KEY")` with explicit error (matches repo pattern)
+- [x] Tests: 20 tests in `hackathon/tests/test_surveillance.py`
 
-- [ ] Wire query bar to temporal memory `query()` skill
-- [ ] "What has Ruthwik been doing today?" → searches entity graph + rolling summaries
-- [ ] Display answers in dashboard
+### Run command:
+```bash
+dimos --dtop --viewer rerun-web run unitree-go2-agentic-mcp-surveillance
+```
 
-## Phase 6: Room Intelligence — NOT STARTED
+## Phase 6: Room Intelligence — NOT STARTED (stretch)
 
 - [ ] 2D room layout overlay on command center map
 - [ ] Annotate desk assignments, room names, object locations

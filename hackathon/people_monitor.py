@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import base64
 from dataclasses import dataclass, field
+import math
 import threading
 import time
 
@@ -49,6 +50,29 @@ CLASSIFY_INTERVAL = 10.0
 
 # Max persons to track simultaneously
 MAX_PERSONS = 10
+
+# Camera intrinsics (Go2 static camera info)
+_CAM_FX = 819.553492
+_CAM_FY = 820.646595
+_CAM_CX = 625.284099
+_CAM_CY = 336.808987
+
+# Assumed depth for person detections (meters)
+_ASSUMED_PERSON_DEPTH = 2.0
+
+# Per-person colors for 3D markers (RGBA)
+_PERSON_COLORS = [
+    [31, 119, 180, 255],
+    [255, 127, 14, 255],
+    [44, 160, 44, 255],
+    [214, 39, 40, 255],
+    [148, 103, 189, 255],
+    [140, 86, 75, 255],
+    [227, 119, 194, 255],
+    [127, 127, 127, 255],
+    [188, 189, 34, 255],
+    [23, 190, 207, 255],
+]
 
 
 @dataclass
@@ -139,6 +163,19 @@ class PeopleMonitor:
             logger.warning(f"PeopleMonitor: Failed to subscribe to detections: {e}")
             # Fallback: subscribe to raw camera frames and run YOLO ourselves
             self._start_fallback_detector()
+
+        # Subscribe to robot odometry for 3D person position estimation
+        try:
+            from dimos.core.transport import LCMTransport as OdomLCMTransport
+            from dimos.msgs.geometry_msgs import PoseStamped
+
+            self._odom_transport = OdomLCMTransport("/odom", PoseStamped)
+            self._latest_odom = None
+            self._odom_transport.subscribe(lambda msg: setattr(self, "_latest_odom", msg))
+            logger.info("PeopleMonitor: subscribed to /odom for 3D projection")
+        except Exception as e:
+            logger.warning(f"PeopleMonitor: Failed to subscribe to odometry: {e}")
+            self._latest_odom = None
 
         # Subscribe to camera frames for person crops (needed for ReID + thumbnails)
         # Blueprint uses LCMTransport for color_image, not pSHMTransport
@@ -272,6 +309,7 @@ class PeopleMonitor:
             person.last_seen = now
             person.track_id = track_id
             person.bbox = det.bbox
+            self._track_to_person[track_id] = long_term_id
 
             # Get crop thumbnail
             try:
@@ -296,6 +334,149 @@ class PeopleMonitor:
 
             # Publish sighting
             self._publish_person(person)
+
+        # Log all person detections to Rerun (2D boxes + labels on camera view)
+        self._log_to_rerun(person_dets)
+
+        # Log 3D markers in Rerun world view
+        self._log_3d_to_rerun(person_dets)
+
+    def _log_to_rerun(self, person_dets: list) -> None:  # type: ignore[type-arg]
+        """Log person detections to Rerun: 2D boxes with activity labels on camera view."""
+        try:
+            import rerun as rr
+
+            centers = []
+            sizes = []
+            labels = []
+            class_ids = []
+
+            for det in person_dets:
+                x1, y1, x2, y2 = det.bbox
+                cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
+                w, h = x2 - x1, y2 - y1
+                centers.append([cx, cy])
+                sizes.append([w, h])
+
+                # Look up person state via our track→person mapping
+                track_id = det.track_id
+                long_term_id = self._track_to_person.get(track_id, track_id)
+
+                with self._lock:
+                    person = self._persons.get(long_term_id)
+
+                if person:
+                    labels.append(f"{person.person_id}: {person.current_activity}")
+                    class_ids.append(person.long_term_id % 20)
+                else:
+                    labels.append(f"track-{track_id}")
+                    class_ids.append(track_id % 20)
+
+            if centers:
+                rr.log(
+                    "world/color_image/people",
+                    rr.Boxes2D(
+                        centers=centers,
+                        sizes=sizes,
+                        labels=labels,
+                        class_ids=class_ids,
+                    ),
+                )
+        except Exception:
+            pass  # Rerun not available or not initialized
+
+    def _estimate_world_position(
+        self, bbox: tuple[float, float, float, float], odom
+    ) -> tuple[float, float, float] | None:
+        """Unproject bbox center to world frame using odom pose.
+
+        Pipeline: pixel → camera optical → base_link → world
+        """
+        try:
+            x1, y1, x2, y2 = bbox
+            px, py = (x1 + x2) / 2, (y1 + y2) / 2
+
+            # Pixel → camera optical frame (X right, Y down, Z forward)
+            cam_x = (px - _CAM_CX) / _CAM_FX * _ASSUMED_PERSON_DEPTH
+            cam_y = (py - _CAM_CY) / _CAM_FY * _ASSUMED_PERSON_DEPTH
+            cam_z = _ASSUMED_PERSON_DEPTH
+
+            # Camera optical → base_link (X forward, Y left, Z up)
+            base_x = cam_z
+            base_y = -cam_x
+            base_z = -cam_y
+
+            # Extract yaw from quaternion (only use yaw for ground-plane transform)
+            qx = odom.orientation[0]
+            qy = odom.orientation[1]
+            qz = odom.orientation[2]
+            qw = odom.orientation[3]
+            yaw = math.atan2(2.0 * (qw * qz + qx * qy), 1.0 - 2.0 * (qy * qy + qz * qz))
+
+            # Base_link → world via odom (rotation by yaw + translation)
+            cos_yaw = math.cos(yaw)
+            sin_yaw = math.sin(yaw)
+            world_x = odom.position[0] + cos_yaw * base_x - sin_yaw * base_y
+            world_y = odom.position[1] + sin_yaw * base_x + cos_yaw * base_y
+            world_z = odom.position[2] + base_z
+
+            return (world_x, world_y, world_z)
+        except Exception:
+            return None
+
+    def _log_3d_to_rerun(self, person_dets: list) -> None:  # type: ignore[type-arg]
+        """Log person positions as 3D markers in Rerun world view."""
+        odom = getattr(self, "_latest_odom", None)
+        if odom is None:
+            logger.warning("PeopleMonitor: no odom yet, skipping 3D logging")
+            return
+
+        try:
+            import rerun as rr
+
+            positions = []
+            labels = []
+            colors = []
+            radii = []
+
+            for det in person_dets:
+                track_id = det.track_id
+                long_term_id = self._track_to_person.get(track_id, track_id)
+
+                with self._lock:
+                    person = self._persons.get(long_term_id)
+
+                if person is None:
+                    logger.warning(
+                        "PeopleMonitor: track_id=%s → long_term_id=%s not in _persons (keys=%s)",
+                        track_id, long_term_id, list(self._persons.keys()),
+                    )
+                    continue
+
+                pos = self._estimate_world_position(det.bbox, odom)
+                if pos is None:
+                    continue
+
+                positions.append(pos)
+                labels.append(f"{person.person_id}: {person.current_activity}")
+                colors.append(_PERSON_COLORS[person.long_term_id % len(_PERSON_COLORS)])
+                radii.append(0.15)
+
+            if positions:
+                rr.log(
+                    "world/people",
+                    rr.Points3D(
+                        positions=positions,
+                        radii=radii,
+                        labels=labels,
+                        colors=colors,
+                    ),
+                )
+                logger.warning("PeopleMonitor: logged %d 3D points to world/people", len(positions))
+            else:
+                logger.warning("PeopleMonitor: _log_3d_to_rerun - no positions to log (dets=%d)", len(person_dets))
+        except Exception as e:
+            logger.warning("PeopleMonitor: _log_3d_to_rerun error: %s", e, exc_info=True)
 
     def _classify_activity(self, person: PersonState) -> None:
         """Send person crop to Claude Haiku for activity classification."""

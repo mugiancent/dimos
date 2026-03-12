@@ -19,6 +19,7 @@ from dimos_lcm.foxglove_msgs.ImageAnnotations import (
 
 from dimos.core.blueprints import autoconnect
 from dimos.core.transport import LCMTransport, pLCMTransport
+from dimos.msgs.geometry_msgs import PoseStamped
 from dimos.msgs.sensor_msgs import Image
 from dimos.msgs.vision_msgs import Detection2DArray
 from dimos.perception.detection.module2D import Detection2DModule
@@ -46,6 +47,7 @@ unitree_go2_agentic_mcp_surveillance = (
             ("detected_image_0", Image): LCMTransport("/detector2d/image/0", Image),
             ("detected_image_1", Image): LCMTransport("/detector2d/image/1", Image),
             ("detected_image_2", Image): LCMTransport("/detector2d/image/2", Image),
+            ("odom", PoseStamped): LCMTransport("/odom", PoseStamped),
         }
     )
     .global_config(n_workers=10)
