@@ -18,7 +18,7 @@ from abc import ABC, abstractmethod
 import inspect
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
-from dimos.memory2.formatting import FilterRepr
+from dimos.memory2.utils.formatting import FilterRepr
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
