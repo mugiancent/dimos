@@ -51,7 +51,7 @@ class SessionConfig:
     blob_store: BlobStore | None = None
     vector_store: VectorStore | None = None
     eager_blobs: bool = False
-    codec: Codec[Any] | None = None
+    codec: Codec[Any] | str | None = None
 
 
 # ── Stream namespace ──────────────────────────────────────────────

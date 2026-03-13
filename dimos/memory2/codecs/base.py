@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import importlib
 from typing import Any, Protocol, TypeVar
 
 T = TypeVar("T")
@@ -42,3 +43,72 @@ def codec_for(payload_type: type[Any] | None = None) -> Codec[Any]:
 
             return LcmCodec(payload_type)
     return PickleCodec()
+
+
+# ── Codec ID serialization ───────────────────────────────────────
+
+
+def codec_id(codec: Codec[Any]) -> str:
+    """Derive a string ID from a codec instance, e.g. ``'lz4+lcm'``.
+
+    Walks the ``_inner`` chain for wrapper codecs, joining with ``+``.
+    Uses the naming convention ``FooCodec`` → ``'foo'``.
+    """
+    parts: list[str] = []
+    c: Any = codec
+    while hasattr(c, "_inner"):
+        parts.append(_class_to_id(c))
+        c = c._inner
+    parts.append(_class_to_id(c))
+    return "+".join(parts)
+
+
+def codec_from_id(codec_id_str: str, payload_module: str) -> Codec[Any]:
+    """Reconstruct a codec chain from its string ID (e.g. ``'lz4+lcm'``).
+
+    Builds inside-out: the rightmost segment is the innermost (base) codec.
+    """
+    parts = codec_id_str.split("+")
+    # Innermost first
+    result = _make_one(parts[-1], payload_module)
+    for name in reversed(parts[:-1]):
+        result = _make_one(name, payload_module, inner=result)
+    return result
+
+
+def _class_to_id(codec: Any) -> str:
+    name = type(codec).__name__
+    if name.endswith("Codec"):
+        return name[:-5].lower()
+    return name.lower()
+
+
+def _resolve_payload_type(payload_module: str) -> type[Any]:
+    parts = payload_module.rsplit(".", 1)
+    if len(parts) != 2:
+        raise ValueError(f"Cannot resolve payload type from {payload_module!r}")
+    mod = importlib.import_module(parts[0])
+    return getattr(mod, parts[1])  # type: ignore[no-any-return]
+
+
+def _make_one(name: str, payload_module: str, inner: Codec[Any] | None = None) -> Codec[Any]:
+    """Instantiate a single codec by its short name."""
+    if name == "lz4":
+        from dimos.memory2.codecs.lz4 import Lz4Codec
+
+        if inner is None:
+            raise ValueError("lz4 is a wrapper codec — must have an inner codec")
+        return Lz4Codec(inner)
+    if name == "jpeg":
+        from dimos.memory2.codecs.jpeg import JpegCodec
+
+        return JpegCodec()
+    if name == "lcm":
+        from dimos.memory2.codecs.lcm import LcmCodec
+
+        return LcmCodec(_resolve_payload_type(payload_module))
+    if name == "pickle":
+        from dimos.memory2.codecs.pickle import PickleCodec
+
+        return PickleCodec()
+    raise ValueError(f"Unknown codec: {name!r}")

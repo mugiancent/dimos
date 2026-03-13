@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any, Generic, TypeVar
 from dimos.core.resource import CompositeResource
 from dimos.memory2.backend import BackendConfig
 from dimos.memory2.blobstore.sqlite import SqliteBlobStore
-from dimos.memory2.codecs.base import Codec, codec_for
+from dimos.memory2.codecs.base import Codec, codec_for, codec_from_id, codec_id
 from dimos.memory2.filter import (
     AfterFilter,
     AtFilter,
@@ -544,37 +544,12 @@ class SqliteSession(Session):
         return conn
 
     @staticmethod
-    def _codec_id(codec: Codec[Any]) -> str:
-        from dimos.memory2.codecs.jpeg import JpegCodec
-        from dimos.memory2.codecs.lcm import LcmCodec
-
-        if isinstance(codec, JpegCodec):
-            return "jpeg"
-        if isinstance(codec, LcmCodec):
-            return "lcm"
-        return "pickle"
+    def _codec_id(c: Codec[Any]) -> str:
+        return codec_id(c)
 
     @staticmethod
-    def _codec_from_id(codec_id: str, payload_module: str) -> Codec[Any]:
-        from dimos.memory2.codecs.pickle import PickleCodec
-
-        if codec_id == "jpeg":
-            from dimos.memory2.codecs.jpeg import JpegCodec
-
-            return JpegCodec()
-        if codec_id == "lcm":
-            from dimos.memory2.codecs.lcm import LcmCodec
-
-            # Resolve the payload type from module path
-            parts = payload_module.rsplit(".", 1)
-            if len(parts) == 2:
-                import importlib
-
-                mod = importlib.import_module(parts[0])
-                cls = getattr(mod, parts[1])
-                return LcmCodec(cls)
-            return PickleCodec()
-        return PickleCodec()
+    def _codec_from_id(codec_id_str: str, payload_module: str) -> Codec[Any]:
+        return codec_from_id(codec_id_str, payload_module)
 
     def _create_backend(
         self, name: str, payload_type: type[Any] | None = None, **config: Any
@@ -595,12 +570,24 @@ class SqliteSession(Session):
                         f"Stream {name!r} was created with type {stored_module}, "
                         f"but opened with {actual_module}"
                     )
-            codec = config.get("codec") or self._codec_from_id(stored_codec_id, stored_module)
+            raw_codec = config.get("codec")
+            if isinstance(raw_codec, str):
+                codec = codec_from_id(raw_codec, stored_module)
+            elif raw_codec is not None:
+                codec = raw_codec
+            else:
+                codec = self._codec_from_id(stored_codec_id, stored_module)
         else:
             if payload_type is None:
                 raise TypeError(f"Stream {name!r} does not exist yet — payload_type is required")
-            codec = config.get("codec") or codec_for(payload_type)
             payload_module = f"{payload_type.__module__}.{payload_type.__qualname__}"
+            raw_codec = config.get("codec")
+            if isinstance(raw_codec, str):
+                codec = codec_from_id(raw_codec, payload_module)
+            elif raw_codec is not None:
+                codec = raw_codec
+            else:
+                codec = codec_for(payload_type)
             self._registry_conn.execute(
                 "INSERT INTO _streams (name, payload_module, codec_id) VALUES (?, ?, ?)",
                 (name, payload_module, self._codec_id(codec)),

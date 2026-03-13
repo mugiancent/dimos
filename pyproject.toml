@@ -86,6 +86,7 @@ dependencies = [
     "protobuf>=6.33.5,<7",
     "psutil>=7.0.0",
     "sqlite-vec>=0.1.6",
+    "lz4>=4.4.5",
 ]
 
 

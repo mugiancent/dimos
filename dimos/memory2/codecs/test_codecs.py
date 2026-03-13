@@ -29,6 +29,8 @@ from dimos.memory2.codecs.base import Codec, codec_for
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from dimos.msgs.protocol import DimosMsg
+
 # ── Case definition ────────────────────────────────────────────────
 
 
@@ -41,6 +43,22 @@ class Case:
 
 
 # ── Test cases ─────────────────────────────────────────────────────
+
+
+def _lcm_values() -> list[DimosMsg]:
+    from dimos.msgs.geometry_msgs.PoseStamped import PoseStamped
+    from dimos.msgs.geometry_msgs.Quaternion import Quaternion
+    from dimos.msgs.geometry_msgs.Vector3 import Vector3
+
+    return [
+        PoseStamped(
+            ts=1.0,
+            frame_id="map",
+            position=Vector3(1.0, 2.0, 3.0),
+            orientation=Quaternion(0.0, 0.0, 0.0, 1.0),
+        ),
+        PoseStamped(ts=0.5, frame_id="odom"),
+    ]
 
 
 def _pickle_case() -> Case:
@@ -56,21 +74,34 @@ def _pickle_case() -> Case:
 def _lcm_case() -> Case:
     from dimos.memory2.codecs.lcm import LcmCodec
     from dimos.msgs.geometry_msgs.PoseStamped import PoseStamped
-    from dimos.msgs.geometry_msgs.Quaternion import Quaternion
-    from dimos.msgs.geometry_msgs.Vector3 import Vector3
 
     return Case(
         name="lcm",
         codec=LcmCodec(PoseStamped),
-        values=[
-            PoseStamped(
-                ts=1.0,
-                frame_id="map",
-                position=Vector3(1.0, 2.0, 3.0),
-                orientation=Quaternion(0.0, 0.0, 0.0, 1.0),
-            ),
-            PoseStamped(ts=0.5, frame_id="odom"),
-        ],
+        values=_lcm_values(),
+    )
+
+
+def _lz4_pickle_case() -> Case:
+    from dimos.memory2.codecs.lz4 import Lz4Codec
+    from dimos.memory2.codecs.pickle import PickleCodec
+
+    return Case(
+        name="lz4+pickle",
+        codec=Lz4Codec(PickleCodec()),
+        values=[42, "hello", b"raw bytes", {"key": "value"}, list(range(1000))],
+    )
+
+
+def _lz4_lcm_case() -> Case:
+    from dimos.memory2.codecs.lcm import LcmCodec
+    from dimos.memory2.codecs.lz4 import Lz4Codec
+    from dimos.msgs.geometry_msgs.PoseStamped import PoseStamped
+
+    return Case(
+        name="lz4+lcm",
+        codec=Lz4Codec(LcmCodec(PoseStamped)),
+        values=_lcm_values(),
     )
 
 
@@ -104,7 +135,11 @@ def _jpeg_case() -> Case | None:
     )
 
 
-testcases = [c for c in [_pickle_case(), _lcm_case(), _jpeg_case()] if c is not None]
+testcases = [
+    c
+    for c in [_pickle_case(), _lcm_case(), _lz4_pickle_case(), _lz4_lcm_case(), _jpeg_case()]
+    if c is not None
+]
 
 
 # ── Tests ──────────────────────────────────────────────────────────
@@ -156,4 +191,7 @@ class TestCodecFor:
         from dimos.memory2.codecs.jpeg import JpegCodec
         from dimos.msgs.sensor_msgs.Image import Image
 
+        assert isinstance(codec_for(Image), JpegCodec)
+        assert isinstance(codec_for(Image), JpegCodec)
+        assert isinstance(codec_for(Image), JpegCodec)
         assert isinstance(codec_for(Image), JpegCodec)

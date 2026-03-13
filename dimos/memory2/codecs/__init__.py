@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from dimos.memory2.codecs.base import Codec, codec_for
+from dimos.memory2.codecs.base import Codec, codec_for, codec_from_id, codec_id
+from dimos.memory2.codecs.lz4 import Lz4Codec
 from dimos.memory2.codecs.pickle import PickleCodec
 
-__all__ = ["Codec", "PickleCodec", "codec_for"]
+__all__ = ["Codec", "Lz4Codec", "PickleCodec", "codec_for", "codec_from_id", "codec_id"]
