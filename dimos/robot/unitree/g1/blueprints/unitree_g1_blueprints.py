@@ -56,7 +56,7 @@ from dimos.perception.detection.moduleDB import ObjectDBModule, detectionDB_modu
 from dimos.perception.detection.person_tracker import PersonTracker, person_tracker_module
 from dimos.perception.object_tracker import object_tracking
 from dimos.perception.spatial_perception import spatial_memory
-from dimos.robot.doom_teleop import doom_teleop
+from dimos.teleop.keyboard.doom_teleop import doom_teleop
 from dimos.robot.foxglove_bridge import foxglove_bridge
 from dimos.robot.unitree.connection.g1 import g1_connection
 from dimos.robot.unitree.connection.g1sim import g1_sim_connection
