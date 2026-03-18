@@ -23,14 +23,14 @@ Usage::
     from dimos.core.blueprints import autoconnect
 
     autoconnect(
-        OrbSlam3.blueprint(sensor_mode="MONOCULAR"),
+        OrbSlam3.blueprint(sensor_mode=SensorMode.MONOCULAR),
         SomeConsumer.blueprint(),
     ).build().loop()
 """
 
 from __future__ import annotations
 
-import os
+import enum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -40,20 +40,29 @@ from dimos.msgs.nav_msgs.Odometry import Odometry
 from dimos.msgs.sensor_msgs.Image import Image
 from dimos.spec import perception
 
-_CACHE_DIR = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "dimos" / "orbslam3"
+_MODULE_DIR = Path(__file__).parent
+
+
+class SensorMode(enum.StrEnum):
+    MONOCULAR = "MONOCULAR"
+    STEREO = "STEREO"
+    RGBD = "RGBD"
+    IMU_MONOCULAR = "IMU_MONOCULAR"
+    IMU_STEREO = "IMU_STEREO"
+    IMU_RGBD = "IMU_RGBD"
 
 
 class OrbSlam3Config(NativeModuleConfig):
     """Config for the ORB-SLAM3 visual SLAM native module."""
 
-    cwd: str | None = None
+    cwd: str | None = str(_MODULE_DIR)
     executable: str = "result/bin/orbslam3_native"
     build_command: str | None = (
-        "nix build github:dimensionalOS/dimos-orb-slam3 --no-write-lock-file"
+        "nix build github:dimensionalOS/dimos-orb-slam3/v0.1.0 --no-write-lock-file"
     )
 
     # ORB-SLAM3 sensor mode
-    sensor_mode: str = "MONOCULAR"  # MONOCULAR, STEREO, RGBD, IMU_MONOCULAR, IMU_STEREO, IMU_RGBD
+    sensor_mode: SensorMode = SensorMode.MONOCULAR
 
     # Pangolin viewer (disable for headless)
     use_viewer: bool = False
@@ -62,30 +71,13 @@ class OrbSlam3Config(NativeModuleConfig):
     frame_id: str = "map"
     child_frame_id: str = "camera"
 
-    # Camera settings YAML (relative name resolves against nix package's bundled configs,
-    # or pass an absolute path for custom configs)
-    settings: Path = Path("RealSense_D435i.yaml.opencv")
-
-    # Resolved from settings, passed as --settings_path to the binary
-    settings_path: str | None = None
+    # Camera settings YAML (absolute path, or override with your own calibration)
+    settings_path: str = str(
+        _MODULE_DIR / "result" / "share" / "orbslam3" / "config" / "RealSense_D435i.yaml"
+    )
 
     # Vocabulary path (None = use compiled-in default from nix build)
     vocab_path: str | None = None
-
-    # settings is not a CLI arg (settings_path is)
-    cli_exclude: frozenset[str] = frozenset({"settings"})
-
-    def model_post_init(self, __context: object) -> None:
-        _CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        if self.cwd is None:
-            self.cwd = str(_CACHE_DIR)
-        super().model_post_init(__context)
-        if self.settings_path is None:
-            if self.settings.is_absolute():
-                self.settings_path = str(self.settings)
-            else:
-                nix_config = _CACHE_DIR / "result" / "share" / "orbslam3" / "config"
-                self.settings_path = str(nix_config / self.settings)
 
 
 class OrbSlam3(NativeModule[OrbSlam3Config], perception.Odometry):
@@ -106,6 +98,7 @@ orbslam3_module = OrbSlam3.blueprint
 __all__ = [
     "OrbSlam3",
     "OrbSlam3Config",
+    "SensorMode",
     "orbslam3_module",
 ]
 
