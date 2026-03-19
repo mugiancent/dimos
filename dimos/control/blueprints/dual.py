@@ -29,9 +29,6 @@ from dimos.msgs.sensor_msgs.JointState import JointState
 
 # Dual mock arms (7-DOF left, 6-DOF right)
 coordinator_dual_mock = control_coordinator(
-    tick_rate=100.0,
-    publish_joint_state=True,
-    joint_state_frame_id="coordinator",
     hardware=[mock_arm("left_arm", 7), mock_arm("right_arm", 6)],
     tasks=[
         TaskConfig(
@@ -55,9 +52,6 @@ coordinator_dual_mock = control_coordinator(
 
 # Dual XArm (XArm7 left, XArm6 right)
 coordinator_dual_xarm = control_coordinator(
-    tick_rate=100.0,
-    publish_joint_state=True,
-    joint_state_frame_id="coordinator",
     hardware=[xarm7("left_arm"), xarm6("right_arm")],
     tasks=[
         TaskConfig(
@@ -81,9 +75,6 @@ coordinator_dual_xarm = control_coordinator(
 
 # Dual arm (XArm6 + Piper)
 coordinator_piper_xarm = control_coordinator(
-    tick_rate=100.0,
-    publish_joint_state=True,
-    joint_state_frame_id="coordinator",
     hardware=[xarm6("xarm_arm"), piper("piper_arm")],
     tasks=[
         TaskConfig(

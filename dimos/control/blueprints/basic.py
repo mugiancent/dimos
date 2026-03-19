@@ -41,9 +41,6 @@ coordinator_basic = control_coordinator(
 
 # Mock 7-DOF arm (for testing)
 coordinator_mock = control_coordinator(
-    tick_rate=100.0,
-    publish_joint_state=True,
-    joint_state_frame_id="coordinator",
     hardware=[mock_arm()],
     tasks=[
         TaskConfig(
@@ -61,9 +58,6 @@ coordinator_mock = control_coordinator(
 
 # XArm7 real hardware
 coordinator_xarm7 = control_coordinator(
-    tick_rate=100.0,
-    publish_joint_state=True,
-    joint_state_frame_id="coordinator",
     hardware=[xarm7()],
     tasks=[
         TaskConfig(
@@ -81,9 +75,6 @@ coordinator_xarm7 = control_coordinator(
 
 # XArm6 real hardware
 coordinator_xarm6 = control_coordinator(
-    tick_rate=100.0,
-    publish_joint_state=True,
-    joint_state_frame_id="coordinator",
     hardware=[xarm6()],
     tasks=[
         TaskConfig(
@@ -101,9 +92,6 @@ coordinator_xarm6 = control_coordinator(
 
 # Piper arm (6-DOF, CAN bus)
 coordinator_piper = control_coordinator(
-    tick_rate=100.0,
-    publish_joint_state=True,
-    joint_state_frame_id="coordinator",
     hardware=[piper()],
     tasks=[
         TaskConfig(

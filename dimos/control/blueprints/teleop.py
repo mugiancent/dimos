@@ -45,9 +45,6 @@ from dimos.teleop.quest.quest_types import Buttons
 
 # XArm6 teleop - streaming position control
 coordinator_teleop_xarm6 = control_coordinator(
-    tick_rate=100.0,
-    publish_joint_state=True,
-    joint_state_frame_id="coordinator",
     hardware=[xarm6()],
     tasks=[
         TaskConfig(
@@ -66,9 +63,6 @@ coordinator_teleop_xarm6 = control_coordinator(
 
 # XArm6 velocity control - streaming velocity for joystick
 coordinator_velocity_xarm6 = control_coordinator(
-    tick_rate=100.0,
-    publish_joint_state=True,
-    joint_state_frame_id="coordinator",
     hardware=[xarm6()],
     tasks=[
         TaskConfig(
@@ -87,9 +81,6 @@ coordinator_velocity_xarm6 = control_coordinator(
 
 # XArm6 combined (servo + velocity tasks)
 coordinator_combined_xarm6 = control_coordinator(
-    tick_rate=100.0,
-    publish_joint_state=True,
-    joint_state_frame_id="coordinator",
     hardware=[xarm6()],
     tasks=[
         TaskConfig(
@@ -115,9 +106,6 @@ coordinator_combined_xarm6 = control_coordinator(
 
 # Mock 6-DOF arm with CartesianIK
 coordinator_cartesian_ik_mock = control_coordinator(
-    tick_rate=100.0,
-    publish_joint_state=True,
-    joint_state_frame_id="coordinator",
     hardware=[mock_arm("arm", 6)],
     tasks=[
         TaskConfig(
@@ -140,9 +128,6 @@ coordinator_cartesian_ik_mock = control_coordinator(
 
 # Piper arm with CartesianIK
 coordinator_cartesian_ik_piper = control_coordinator(
-    tick_rate=100.0,
-    publish_joint_state=True,
-    joint_state_frame_id="coordinator",
     hardware=[piper()],
     tasks=[
         TaskConfig(
@@ -166,9 +151,6 @@ coordinator_cartesian_ik_piper = control_coordinator(
 
 # Single XArm7 with TeleopIK
 coordinator_teleop_xarm7 = control_coordinator(
-    tick_rate=100.0,
-    publish_joint_state=True,
-    joint_state_frame_id="coordinator",
     hardware=[xarm7(gripper=True)],
     tasks=[
         TaskConfig(
@@ -196,9 +178,6 @@ coordinator_teleop_xarm7 = control_coordinator(
 
 # Single Piper with TeleopIK
 coordinator_teleop_piper = control_coordinator(
-    tick_rate=100.0,
-    publish_joint_state=True,
-    joint_state_frame_id="coordinator",
     hardware=[piper()],
     tasks=[
         TaskConfig(
@@ -223,9 +202,6 @@ coordinator_teleop_piper = control_coordinator(
 
 # Dual arm teleop: XArm6 + Piper with TeleopIK
 coordinator_teleop_dual = control_coordinator(
-    tick_rate=100.0,
-    publish_joint_state=True,
-    joint_state_frame_id="coordinator",
     hardware=[xarm6("xarm_arm"), piper("piper_arm")],
     tasks=[
         TaskConfig(
