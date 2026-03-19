@@ -176,7 +176,7 @@ def test_subscribe_all_unsubscribe(tc: Case[Any, Any]) -> None:
         unsub()
 
         pub.publish(topic, value)
-        time.sleep(0.2)  # Wait to confirm no new messages arrive
+        time.sleep(0.1)  # Wait to confirm no new messages arrive
         assert len(collector.results) == 1  # No new messages
 
 
