@@ -352,6 +352,7 @@ class ROSNav(Module, NavigationInterface):
         self.cancel_goal_pub = self._node.create_publisher(ROSBool, "/cancel_goal", 10)
         self.soft_stop_pub = self._node.create_publisher(ROSInt8, "/stop", 10)
         self.joy_pub = self._node.create_publisher(ROSJoy, "/joy", 10)
+        self.cmd_vel_pub = self._node.create_publisher(ROSTwistStamped, "/cmd_vel", 10)
 
         # ROS2 Subscribers
         self.goal_reached_sub = self._node.create_subscription(
@@ -533,8 +534,9 @@ class ROSNav(Module, NavigationInterface):
             self._teleop_timer.daemon = True
             self._teleop_timer.start()
 
-        # Forward teleop command to output
+        # Forward teleop command to DimOS stream and ROS topic (for Unity sim)
         self.cmd_vel.publish(msg)
+        self.cmd_vel_pub.publish(_twist_to_ros(msg))
 
     def _end_teleop_override(self) -> None:
         with self._teleop_lock:
@@ -887,6 +889,18 @@ def _pc2_from_ros(msg: "ROSPointCloud2") -> PointCloud2:
             )
 
     return PointCloud2.from_numpy(points, frame_id=frame_id, timestamp=ts)
+
+
+def _twist_to_ros(twist: Twist) -> "ROSTwistStamped":
+    """Convert a DimOS Twist to a ROS2 geometry_msgs/TwistStamped."""
+    ros_msg = ROSTwistStamped()  # type: ignore[no-untyped-call]
+    ros_msg.twist.linear.x = float(twist.linear.x)
+    ros_msg.twist.linear.y = float(twist.linear.y)
+    ros_msg.twist.linear.z = float(twist.linear.z)
+    ros_msg.twist.angular.x = float(twist.angular.x)
+    ros_msg.twist.angular.y = float(twist.angular.y)
+    ros_msg.twist.angular.z = float(twist.angular.z)
+    return ros_msg
 
 
 def _twist_from_ros(msg: "ROSTwistStamped") -> Twist:
