@@ -123,19 +123,11 @@ class ModuleCoordinator(Resource):  # type: ignore[misc]
             for index, module in zip(indices_by_manager[mid], deployed, strict=True):
                 results[index] = module
 
-        def _register() -> None:
-            for (module_class, _, _), module in zip(module_specs, results, strict=True):
-                if module is not None:
-                    self._deployed_modules[module_class] = module
 
-        def _on_errors(
-            _outcomes: list[Any], _successes: list[Any], errors: list[Exception]
-        ) -> None:
-            _register()
-            raise ExceptionGroup("deploy_parallel failed", errors)
-
-        safe_thread_map(list(groups.keys()), _deploy_group, _on_errors)
-        _register()
+        safe_thread_map(list(groups.keys()), _deploy_group)
+        self._deployed_modules.update(
+            {cls: mod for (cls, _, _), mod in zip(module_specs, results, strict=True) if mod is not None}
+        )
         return results
 
     def build_all_modules(self) -> None:
@@ -164,12 +156,7 @@ class ModuleCoordinator(Resource):  # type: ignore[misc]
         if not modules:
             raise ValueError("No modules deployed. Call deploy() before start_all_modules().")
 
-        def _on_start_errors(
-            _outcomes: list[Any], _successes: list[Any], errors: list[Exception]
-        ) -> None:
-            raise ExceptionGroup("start_all_modules failed", errors)
-
-        safe_thread_map(modules, lambda m: m.start(), _on_start_errors)
+        safe_thread_map(modules, lambda m: m.start())
 
         for module in modules:
             if hasattr(module, "on_system_modules"):
