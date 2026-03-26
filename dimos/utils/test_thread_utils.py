@@ -339,9 +339,10 @@ class TestModuleThread:
     def test_close_timeout_respected(self) -> None:
         """If the thread ignores the stop signal, stop() should return after close_timeout."""
         mod = FakeModule()
+        cancel = threading.Event()
 
         def stubborn_target() -> None:
-            time.sleep(10)  # ignores stopping signal
+            cancel.wait(10)  # blocks but can be released for cleanup
 
         mt = ModuleThread(
             module=mod, target=stubborn_target, name="test-timeout", close_timeout=0.2
@@ -351,6 +352,9 @@ class TestModuleThread:
         mt.stop()
         elapsed = time.monotonic() - start
         assert elapsed < 1.0, f"stop() took {elapsed}s, expected ~0.2s"
+        # Release the thread so it doesn't leak
+        cancel.set()
+        mt._thread.join(timeout=1.0)
 
     def test_stop_concurrent_with_dispose(self) -> None:
         """Calling stop() and dispose() concurrently should not crash."""
@@ -382,6 +386,7 @@ class TestAsyncModuleThread:
     def test_creates_loop_and_thread(self) -> None:
         mod = FakeModule()
         amt = AsyncModuleThread(module=mod)
+        amt.start()
         assert amt.loop is not None
         assert amt.loop.is_running()
         assert amt.is_alive
@@ -391,6 +396,7 @@ class TestAsyncModuleThread:
     def test_stop_idempotent(self) -> None:
         mod = FakeModule()
         amt = AsyncModuleThread(module=mod)
+        amt.start()
         amt.stop()
         amt.stop()  # should not raise
         amt.stop()
@@ -398,6 +404,7 @@ class TestAsyncModuleThread:
     def test_dispose_stops_loop(self) -> None:
         mod = FakeModule()
         amt = AsyncModuleThread(module=mod)
+        amt.start()
         assert amt.is_alive
         mod.dispose()
         time.sleep(0.1)
@@ -406,6 +413,7 @@ class TestAsyncModuleThread:
     def test_can_schedule_coroutine(self) -> None:
         mod = FakeModule()
         amt = AsyncModuleThread(module=mod)
+        amt.start()
         result = []
 
         async def coro() -> None:
@@ -420,6 +428,7 @@ class TestAsyncModuleThread:
         """Stop should succeed even with long-running tasks on the loop."""
         mod = FakeModule()
         amt = AsyncModuleThread(module=mod)
+        amt.start()
         started = threading.Event()
 
         async def slow_coro() -> None:
@@ -437,6 +446,7 @@ class TestAsyncModuleThread:
     def test_concurrent_stop(self) -> None:
         mod = FakeModule()
         amt = AsyncModuleThread(module=mod)
+        amt.start()
         errors = []
 
         def stop_it() -> None:

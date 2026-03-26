@@ -201,6 +201,18 @@ class AsyncModuleThread:
         self._stopped = ThreadSafeVal(False)
         self._owns_loop = False
         self._thread: threading.Thread | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._module_name = type(module).__name__
+
+        module._disposables.add(Disposable(self.stop))
+
+    def start(self) -> None:
+        """Create (or reuse) the event loop and start the driver thread.
+
+        Safe to call multiple times — subsequent calls are no-ops.
+        """
+        if self._loop is not None:
+            return
 
         try:
             self._loop = asyncio.get_running_loop()
@@ -211,11 +223,9 @@ class AsyncModuleThread:
             self._thread = threading.Thread(
                 target=self._loop.run_forever,
                 daemon=True,
-                name=f"{type(module).__name__}-event-loop",
+                name=f"{self._module_name}-event-loop",
             )
             self._thread.start()
-
-        module._disposables.add(Disposable(self.stop))
 
     @property
     def loop(self) -> asyncio.AbstractEventLoop:
@@ -237,7 +247,7 @@ class AsyncModuleThread:
                 return
             self._stopped.set(True)
 
-        if self._owns_loop and self._loop.is_running():
+        if self._owns_loop and self._loop is not None and self._loop.is_running():
             self._loop.call_soon_threadsafe(self._loop.stop)
 
         if self._thread is not None and self._thread.is_alive():

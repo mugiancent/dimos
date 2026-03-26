@@ -123,6 +123,7 @@ class ModuleBase(Configurable[ModuleConfigT], Resource):
             if state == "stopped":
                 raise RuntimeError(f"{type(self).__name__} cannot be restarted after stop")
             self.mod_state.set("started")
+        self._async_thread.start()
 
     @rpc
     def stop(self) -> None:
