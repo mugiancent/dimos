@@ -60,7 +60,7 @@ class Backend(CompositeResource, Generic[T]):
         self.codec = codec
         self.blob_store = self.register_disposable(blob_store) if blob_store else None
         self.vector_store = self.register_disposable(vector_store) if vector_store else None
-        self.notifier: Notifier[T] = notifier or SubjectNotifier()
+        self.notifier: Notifier[T] = self.register_disposable(notifier or SubjectNotifier())
         self.eager_blobs = eager_blobs
 
     def start(self) -> None:

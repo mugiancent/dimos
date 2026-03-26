@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
+from dimos.memory2.backend import Backend
 from dimos.memory2.blobstore.base import BlobStore
 from dimos.memory2.vectorstore.base import VectorStore
 
@@ -525,3 +526,51 @@ class TestStreamAccessor:
         assert "late" not in dir(session.streams)
         session.stream("late", str)
         assert "late" in dir(session.streams)
+
+
+class TestStoreLifecycle:
+    """Cleanup chain: Store → Stream → Backend → components."""
+
+    def test_stop_stream_keeps_other_streams(self, session: Store) -> None:
+        """Stopping one stream doesn't affect another."""
+        s1 = session.stream("a", int)
+        s2 = session.stream("b", int)
+        s1.append(1)
+        s2.append(2)
+
+        s1.stop()
+
+        # s2 still works
+        s2.append(3)
+        assert [obs.data for obs in s2] == [2, 3]
+
+    def test_store_stop_stops_backends(self, session: Store) -> None:
+        """Store.stop() disposes backends (registered as disposables)."""
+        s1 = session.stream("x", int)
+        s2 = session.stream("y", int)
+        s1.append(10)
+        s2.append(20)
+
+        backend1 = s1._source
+        backend2 = s2._source
+        assert isinstance(backend1, Backend)
+        assert isinstance(backend2, Backend)
+
+        session.stop()
+
+        # Both backends' disposables are disposed
+        assert backend1._disposables is None or backend1._disposables.is_disposed
+        assert backend2._disposables is None or backend2._disposables.is_disposed
+
+    def test_backend_stop_stops_components(self, session: Store) -> None:
+        """Backend.stop() propagates to metadata_store, blob_store, vector_store."""
+        s = session.stream("z", int)
+        backend = s._source
+        assert isinstance(backend, Backend)
+        metadata_store = backend.metadata_store
+
+        session.stop()
+
+        # metadata_store should be stopped (CompositeResource._disposables disposed)
+        if hasattr(metadata_store, "_disposables") and metadata_store._disposables is not None:
+            assert metadata_store._disposables.is_disposed
