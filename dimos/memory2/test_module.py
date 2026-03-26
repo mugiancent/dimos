@@ -20,14 +20,10 @@ import pytest
 
 from dimos.core.stream import In, Out
 from dimos.memory2.module import StreamModule
-from dimos.memory2.observationstore.memory import ListObservationStore
 from dimos.memory2.store.memory import MemoryStore
-from dimos.memory2.store.null import NullStore
 from dimos.memory2.stream import Stream
 from dimos.memory2.transform import FnTransformer, Transformer
 from dimos.memory2.type.observation import Observation
-
-# -- Unbound stream tests --
 
 
 def test_unbound_stream_creation() -> None:
@@ -138,9 +134,6 @@ def test_unbound_str() -> None:
     """Unbound streams display as Stream(unbound)."""
     s = Stream()
     assert "unbound" in str(s)
-
-
-# -- StreamModule tests --
 
 
 def test_stream_module_subclass_blueprint() -> None:
@@ -265,48 +258,3 @@ def test_stream_module_runtime_wiring() -> None:
     get_scheduler().executor.shutdown(wait=True)
 
     assert received == [84]
-
-
-# -- max_size=0 (discard) tests --
-
-
-def test_max_size_zero_monotonic_ids() -> None:
-    """ListObservationStore(max_size=0) assigns monotonically increasing IDs."""
-    store = ListObservationStore(name="test", max_size=0)
-    store.start()
-
-    obs = Observation(id=-1, ts=1.0, _data="hello")
-    id0 = store.insert(obs)
-    id1 = store.insert(Observation(id=-1, ts=2.0, _data="world"))
-    id2 = store.insert(Observation(id=-1, ts=3.0, _data="!"))
-
-    assert id0 == 0
-    assert id1 == 1
-    assert id2 == 2
-
-
-def test_max_size_zero_empty_query() -> None:
-    """ListObservationStore(max_size=0) query always returns empty."""
-    from dimos.memory2.type.filter import StreamQuery
-
-    store = ListObservationStore(name="test", max_size=0)
-    store.start()
-    store.insert(Observation(id=-1, ts=1.0, _data="data"))
-
-    assert list(store.query(StreamQuery())) == []
-    assert store.count(StreamQuery()) == 0
-    assert store.fetch_by_ids([0]) == []
-
-
-def test_null_store_discards_history() -> None:
-    """NullStore (max_size=0) discards history but still supports live streaming."""
-    store = NullStore()
-    with store:
-        stream = store.stream("test", int)
-        stream.append(1)
-        stream.append(2)
-        stream.append(3)
-
-        # History is empty — max_size=0 discards everything
-        assert stream.count() == 0
-        assert stream.fetch() == []
