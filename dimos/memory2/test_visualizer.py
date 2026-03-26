@@ -204,4 +204,3 @@ class TestVisualizer:
                     ).inverse(),
                 )
                 print(det3d)
-                print(det3d)
