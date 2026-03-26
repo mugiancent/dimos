@@ -39,7 +39,9 @@ class MemoryStore(Store):
         self, name: str, payload_type: type[Any] | None = None, **config: Any
     ) -> Backend[Any]:
         if "observation_store" not in config and self.config.observation_store is None:
-            obs = ListObservationStore(name=name, max_size=self.config.max_size)
+            obs: ListObservationStore[Any] = ListObservationStore(
+                name=name, max_size=self.config.max_size
+            )
             obs.start()
             config["observation_store"] = obs
         return super()._create_backend(name, payload_type, **config)

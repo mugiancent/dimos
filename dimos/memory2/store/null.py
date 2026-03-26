@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Any
+
 from dimos.memory2.store.memory import MemoryStore
 
 
@@ -22,6 +24,6 @@ class NullStore(MemoryStore):
     Observations get IDs (for live dedup) but are immediately discarded.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         kwargs.setdefault("max_size", 0)
         super().__init__(**kwargs)
