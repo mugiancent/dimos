@@ -140,7 +140,11 @@ class NativeModule(Module[_NativeConfig]):
             module=self,
             args=[
                 self.config.executable,
-                *[arg for name, topic in self._collect_topics().items() for arg in (f"--{name}", topic)],
+                *[
+                    arg
+                    for name, topic in self._collect_topics().items()
+                    for arg in (f"--{name}", topic)
+                ],
                 *self.config.to_cli_args(),
                 *self.config.extra_args,
             ],

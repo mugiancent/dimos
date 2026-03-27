@@ -135,7 +135,9 @@ class ModuleThread:
         thread_kwargs.setdefault("name", f"{type(module).__name__}-thread")
         self._thread = threading.Thread(**thread_kwargs)
         self._close_timeout = close_timeout
-        self.status: ThreadSafeVal[Literal["not_started", "running", "stopping", "stopped"]] = ThreadSafeVal("not_started")
+        self.status: ThreadSafeVal[Literal["not_started", "running", "stopping", "stopped"]] = (
+            ThreadSafeVal("not_started")
+        )
         module._disposables.add(Disposable(self.stop))
 
     def start(self) -> None:
@@ -522,7 +524,7 @@ def safe_thread_map(
 
 
 def thread_start(
-    module: "ModuleBase[Any]",
+    module: ModuleBase[Any],
     *,
     close_timeout: float = 2.0,
     **thread_kwargs: Any,
