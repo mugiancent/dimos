@@ -14,8 +14,10 @@
 
 """TwitchVotes: extends TwitchChat with vote tallying.
 
-Collects chat commands over a configurable window and publishes the
-winning command as a :class:`VoteResult`.
+Each incoming message is passed through ``message_to_choice`` to extract a
+choice string.  If the result is one of ``choices``, the vote is recorded.
+At the end of each window the winning choice is published as a
+:class:`TwitchChoice` on ``chat_vote_choice``.
 
 Voting modes: plurality, majority, weighted_recent, runoff.
 """
@@ -23,6 +25,7 @@ Voting modes: plurality, majority, weighted_recent, runoff.
 from __future__ import annotations
 
 from collections import Counter, deque
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 import re
@@ -39,7 +42,7 @@ logger = setup_logger()
 
 
 @dataclass
-class VoteResult:
+class TwitchChoice:
     winner: str = ""
     total_votes: int = 0
     timestamp: float = 0.0
@@ -52,9 +55,15 @@ class VoteMode(str, Enum):
     RUNOFF = "runoff"
 
 
+def _default_message_to_choice(msg: TwitchMessage, choices: list[str]) -> str | None:
+    return msg.find_one(choices)
+
+
 class TwitchVotesConfig(TwitchChatConfig):
-    keywords: list[str] = ["forward", "back", "left", "right", "stop"]
-    """Valid vote keywords. Also used to build regex patterns on the base TwitchChat."""
+    # A vote is only counted if message_to_choice returns one of these.
+    choices: list[str] = ["forward", "back", "left", "right", "stop"]
+    # (msg, choices) -> choice string or None
+    message_to_choice: Callable[[TwitchMessage, list[str]], str | None] = _default_message_to_choice
 
     vote_window_seconds: float = 5.0
     min_votes_threshold: int = 1
@@ -106,7 +115,6 @@ def _tally_runoff(votes: list[tuple[str, float, str]]) -> str | None:
     if len(top2) < 2:
         return winner
 
-    # For each voter, use their latest vote if it's in top2
     latest: dict[str, str] = {}
     for cmd, _, voter in votes:
         latest[voter] = cmd
@@ -122,46 +130,63 @@ def _tally_runoff(votes: list[tuple[str, float, str]]) -> str | None:
 class TwitchVotes(TwitchChat):
     """Extends TwitchChat with vote tallying.
 
-    Chat messages matching configured keywords are collected over a time
-    window, then the winning command is published as a :class:`VoteResult`
-    on ``vote_results``.
+    Each incoming message is passed through ``message_to_choice``.  If the
+    result is one of ``choices``, the vote is recorded.  At the end of each
+    window the winning choice is published as a :class:`TwitchChoice` on
+    ``chat_vote_choice``.
     """
 
     default_config = TwitchVotesConfig
     config: TwitchVotesConfig  # type narrowing for mypy
 
-    vote_results: Out[VoteResult]
+    chat_vote_choice: Out[TwitchChoice]
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self._votes: deque[tuple[str, float, str]] = deque()
         self._votes_lock = threading.Lock()
         self._vote_thread: threading.Thread | None = None
-        self._valid_keywords: frozenset[str] = frozenset()
+        self._valid_choices: frozenset[str] = frozenset()
 
     def _handle_message(self, message: Any) -> None:
-        """Extend base to also record votes from matching messages."""
         super()._handle_message(message)
 
         content: str = message.content or ""
-        prefix = self.config.bot_prefix
-        if not content.strip().startswith(prefix):
-            return
-        cmd = content.strip()[len(prefix) :].strip().lower()
         author = message.author.name if message.author else "anonymous"
 
-        if cmd in self._valid_keywords:
+        # Build a TwitchMessage for the callback's second arg
+        badges: dict[str, str] = {}
+        if message.tags and "badges" in message.tags:
+            raw_badges = message.tags["badges"]
+            if raw_badges:
+                for badge in raw_badges.split(","):
+                    parts = badge.split("/", 1)
+                    if len(parts) == 2:
+                        badges[parts[0]] = parts[1]
+
+        msg = TwitchMessage(
+            author=author,
+            content=content,
+            channel=message.channel.name if message.channel else "",
+            timestamp=time.time(),
+            is_subscriber="subscriber" in badges,
+            is_mod="moderator" in badges,
+            badges=badges,
+        )
+
+        choice = self.config.message_to_choice(msg, self.config.choices)
+        if choice is not None and choice in self._valid_choices:
             with self._votes_lock:
-                self._votes.append((cmd, time.time(), author))
+                self._votes.append((choice, time.time(), author))
 
     @rpc
     def start(self) -> None:
-        # Auto-generate patterns from keywords so the base class filters correctly
-        if self.config.keywords and not self.config.patterns:
-            escaped = "|".join(re.escape(k) for k in self.config.keywords)
-            self.config.patterns = [rf"^{re.escape(self.config.bot_prefix)}(?:{escaped})\b"]
+        self._valid_choices = frozenset(self.config.choices)
 
-        self._valid_keywords = frozenset(self.config.keywords)
+        # Auto-generate filter patterns from choices so the base filters correctly
+        if self.config.choices and not self.config.patterns:
+            escaped = "|".join(re.escape(c) for c in self.config.choices)
+            self.config.patterns = [rf"^{re.escape(self.config.bot_prefix)}(?:{escaped})\b"]
 
         super().start()
 
@@ -182,13 +207,13 @@ class TwitchVotes(TwitchChat):
             self._vote_thread = None
         super().stop()
 
-    def record_vote(self, command: str, voter: str = "anonymous") -> None:
+    def record_vote(self, choice: str, voter: str = "anonymous") -> None:
         """Record a vote programmatically (for testing)."""
-        cmd = command.lower().strip()
-        if cmd not in self._valid_keywords:
+        c = choice.lower().strip()
+        if c not in self._valid_choices:
             return
         with self._votes_lock:
-            self._votes.append((cmd, time.time(), voter))
+            self._votes.append((c, time.time(), voter))
 
     def _vote_loop(self) -> None:
         while True:
@@ -196,10 +221,9 @@ class TwitchVotes(TwitchChat):
             time.sleep(self.config.vote_window_seconds)
             window_end = time.time()
 
-            # Atomically drain votes within window
             cutoff = window_end - self.config.vote_window_seconds
             with self._votes_lock:
-                current_votes = [(cmd, ts, voter) for cmd, ts, voter in self._votes if ts >= cutoff]
+                current_votes = [(c, ts, v) for c, ts, v in self._votes if ts >= cutoff]
                 self._votes.clear()
 
             if len(current_votes) < self.config.min_votes_threshold:
@@ -209,13 +233,9 @@ class TwitchVotes(TwitchChat):
             if winner is None:
                 continue
 
-            logger.info(
-                "[TwitchVotes] Winner: %s (%d votes)",
-                winner,
-                len(current_votes),
-            )
-            self.vote_results.publish(
-                VoteResult(winner=winner, total_votes=len(current_votes), timestamp=window_end)
+            logger.info("[TwitchVotes] Winner: %s (%d votes)", winner, len(current_votes))
+            self.chat_vote_choice.publish(
+                TwitchChoice(winner=winner, total_votes=len(current_votes), timestamp=window_end)
             )
 
     def _tally(

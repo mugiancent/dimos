@@ -21,6 +21,7 @@ patterns on ``filtered_messages``.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass, field
 import os
 import re
@@ -46,21 +47,36 @@ class TwitchMessage:
     is_mod: bool = False
     badges: dict[str, str] = field(default_factory=dict)
 
+    @property
+    def text(self) -> str:
+        return self.content
+
+    def find_one(self, options: list[str] | set[str] | frozenset[str]) -> str | None:
+        """Return the first option found in the message content (case-insensitive), or None."""
+        lower = self.content.lower()
+        for opt in options:
+            if opt.lower() in lower:
+                return opt
+        return None
+
     def __repr__(self) -> str:
         return f"TwitchMessage({self.author}: {self.content!r})"
 
 
 class TwitchChatConfig(ModuleConfig):
+    # OAuth token (oauth:xxx). Falls back to DIMOS_TWITCH_TOKEN env var.
     twitch_token: str = ""
-    """OAuth token (oauth:xxx). Falls back to TWITCH_TOKEN env var."""
-
+    # Falls back to DIMOS_CHANNEL_NAME env var.
     channel_name: str = ""
-    """Falls back to CHANNEL_NAME env var."""
-
     bot_prefix: str = "!"
-
+    # Regex patterns for filtered_messages. If empty, all messages pass through.
     patterns: list[str] = []
-    """Regex patterns for filtered_messages. If empty, all messages pass through."""
+    # Only pass messages where is_mod matches this value.
+    filter_is_mod: bool | None = None
+    # Only pass messages where is_subscriber matches this value.
+    filter_is_subscriber: bool | None = None
+    filter_content: Callable[[str], bool] | None = None
+    filter_author: Callable[[str], bool] | None = None
 
 
 class TwitchChat(Module["TwitchChatConfig"]):
@@ -86,8 +102,8 @@ class TwitchChat(Module["TwitchChatConfig"]):
     def start(self) -> None:
         super().start()
 
-        token = self.config.twitch_token or os.getenv("TWITCH_TOKEN", "")
-        channel = self.config.channel_name or os.getenv("CHANNEL_NAME", "")
+        token = self.config.twitch_token or os.getenv("DIMOS_TWITCH_TOKEN", "")
+        channel = self.config.channel_name or os.getenv("DIMOS_CHANNEL_NAME", "")
 
         if not token or not channel:
             logger.warning("[TwitchChat] No token/channel — running in local-only mode")
@@ -171,7 +187,18 @@ class TwitchChat(Module["TwitchChatConfig"]):
         self._publish_if_matched(msg)
 
     def _publish_if_matched(self, msg: TwitchMessage) -> None:
-        """Publish to filtered_messages if msg matches patterns (or no patterns configured)."""
+        """Publish to filtered_messages if msg passes all configured filters."""
+        cfg = self.config
+
+        if cfg.filter_is_mod is not None and msg.is_mod != cfg.filter_is_mod:
+            return
+        if cfg.filter_is_subscriber is not None and msg.is_subscriber != cfg.filter_is_subscriber:
+            return
+        if cfg.filter_author is not None and not cfg.filter_author(msg.author):
+            return
+        if cfg.filter_content is not None and not cfg.filter_content(msg.content):
+            return
+
         if self._compiled_patterns:
             for pat in self._compiled_patterns:
                 if pat.search(msg.content):
