@@ -104,6 +104,7 @@ all_modules = {
     "b1-connection-module": "dimos.robot.unitree.b1.connection.B1ConnectionModule",
     "camera-module": "dimos.hardware.sensors.camera.module.CameraModule",
     "cartesian-motion-controller": "dimos.manipulation.control.servo_control.cartesian_motion_controller.CartesianMotionController",
+    "cmd-vel-mux": "dimos.navigation.cmd_vel_mux.CmdVelMux",
     "control-coordinator": "dimos.control.coordinator.ControlCoordinator",
     "cost-mapper": "dimos.mapping.costmapper.CostMapper",
     "demo-calculator-skill": "dimos.agents.skills.demo_calculator_skill.DemoCalculatorSkill",
