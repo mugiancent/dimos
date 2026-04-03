@@ -102,4 +102,4 @@ class PathFollower(NativeModule):
 
     path: In[Path]
     odometry: In[Odometry]
-    cmd_vel: Out[Twist]
+    nav_cmd_vel: Out[Twist]
