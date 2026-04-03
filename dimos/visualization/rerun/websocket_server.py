@@ -218,12 +218,12 @@ class RerunWebSocketServer(Module[Config]):
             if not self._teleop_clients:
                 self.stop_movement.publish(Bool(data=True))
             self._teleop_clients.add(client_id)
-            self.cmd_vel.publish(twist)
+            self.tele_cmd_vel.publish(twist)
 
         elif msg_type == "stop":
             logger.debug("RerunWebSocketServer: stop")
             self._teleop_clients.discard(client_id)
-            self.cmd_vel.publish(Twist.zero())
+            self.tele_cmd_vel.publish(Twist.zero())
 
         elif msg_type == "heartbeat":
             logger.debug(f"RerunWebSocketServer: heartbeat ts={msg.get('timestamp_ms')}")
