@@ -1,9 +1,17 @@
 {
-  "phase": "cross-wall routing - WORKING",
-  "status": "done",
-  "last_test_result": "p1→p2 cross-wall: PASS. Robot navigated from (-4.71,1.29) to (3.69,2.04) via open corridor in ~18s. Goal reprojection working.",
-  "p0_passed": true,
-  "p1_p2_passed": true,
-  "teleop_passed": true,
-  "notes": "## Session Summary\n\n### Fixes Applied (far_planner repo commit e31e186)\n\n1. **ReprojectPointOutsidePolygons**: When goal is placed inside obstacle polygon (room furniture/walls), reproject to just outside the polygon boundary. Prevents 'connected=0' dead-lock when goal is inside a closed polygon.\n\n2. **Center-point polygon check**: Changed IsNavNodesConnectFreePolygon to use the reference's center-point same-side test: block edge only if edge center is on OPPOSITE side from robot. Allows edges that stay within same free-space region (room interior or corridor) without false-blocking.\n\n3. **2D convergence**: Changed goal-reached check to use norm_flat() (2D distance) instead of norm() (3D). Fixes the 1.3m '3D distance' bug where robot z=1.24 but goal z=0 prevented convergence at 0.34m 2D distance.\n\n4. **Path momentum**: Added heading consistency check to prevent oscillation between two competing routes.\n\n### Test Results\n- p0 forward: 11s ✓\n- p0 backward: 21s ✓ (longer due to exploring both corridors first)\n- Cross-wall (p1→p2): robot navigates from left area to right area via open corridor\n- The robot routes through y≈0.5-2.0 (open corridor) not through y≈2.7-4.4 (room walls)\n\n### Architecture Understanding\nThe room layout has:\n- Open corridor: y<2.5 (all open)\n- Room south boundary: y≈2.4-2.8 (polygon boundary)\n- Room interior: y=2.8-4.4 (enclosed by furniture polygon)\n- The 'wall' between p1 and p2 is the room furniture polygon\n- The 'doorway' is actually the open corridor below the room boundary\n\n### Remaining Notes\n- p0 times: 11s forward, 21s backward (acceptable)\n- Cross-wall convergence happens at y≈2.0 (goal reprojected to room south boundary)\n- Robot doesn't enter deep into rooms (y>2.7) but can navigate between room areas\n- Memory leak: VIEWER=none reduces memory significantly; run without rerun in production"
+  "task": "agent_cmd_vel with duration",
+  "status": "complete",
+  "commit": "6c176a4b1",
+  "branch": "jeff/fix/rosnav5",
+  "files_changed": [
+    "dimos/msgs/geometry_msgs/TwistDuration.py",
+    "dimos/navigation/cmd_vel_mux.py",
+    "bin/send_cmd_vel"
+  ],
+  "summary": {
+    "TwistDuration": "New LCM message: Twist + duration (float64). Full encode/decode/round-trip tested.",
+    "CmdVelMux": "New agent_cmd_vel: In[TwistDuration] port. Highest priority (agent > teleop > nav). Auto-stops after duration. No stop_movement signal.",
+    "send_cmd_vel": "Updated to publish TwistDuration on /agent_cmd_vel. Usage: send_cmd_vel <lx> <ly> <az> [duration=1.0]",
+    "blueprint": "No changes needed — agent_cmd_vel auto-exposes as LCM channel via autoconnect."
+  }
 }
