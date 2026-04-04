@@ -1,9 +1,45 @@
 {
-  "phase": "p0 nearly passing, teleop verified working",
-  "status": "working",
-  "last_test_result": "p0 FORWARD: 6.9s ✓. p0 BACKWARD: 9s (Y-oscillation). Teleop: works correctly when using proper Twist constructor. 1s lag after teleop stop is by design (cooldown_sec=1.0).",
-  "p0_passed": false,
-  "p1_p2_passed": false,
-  "teleop_passed": true,
-  "notes": "Summary of fixes: (1) maxYawRate 1.5→80 deg/s [CRITICAL], (2) omniDirGoalThre/DiffThre large values for full omni-dir acceleration, (3) freezeAng 90→180 to prevent freeze pauses, (4) converge_dist 0.4→0.8, (5) slowDwnDisThre 0.2→1.0, (6) maxRelZ 1.5→0.3. p0 backward direction still has Y-oscillation (~2m drift). Need to investigate local planner backward path group selection quality."
+  "session": 3,
+  "timestamp": "2026-04-04T08:20:00-07:00",
+  "branch": "jeff/fix/rosnav5",
+  "commits": [
+    "90c5a37 — fix PathFollower maxYawRate unit mismatch (1.5→80 deg/s)",
+    "3671eb9 — disable freeze logic for omni-dir robot (freezeAng=180), expose local planner params",
+    "0148c2e — omni-dir acceleration change (REVERTED in d1463f0)",
+    "d1463f0 — revert omni-dir mode: robot turns to face movement direction"
+  ],
+  "test_results": {
+    "p0_forward": {
+      "status": "pass",
+      "details": "Robot reaches (6,0) from (0,0). ~11s total including ClickToGoal relay delay. Routes north around wall (suboptimal but functional)."
+    },
+    "p0_backward": {
+      "status": "pass",
+      "details": "Robot reaches (-6,0) from current position. Robot turns to face direction."
+    },
+    "cross_wall_right": {
+      "status": "pass", 
+      "details": "Robot at (0,0) → (5,0) across wall at x≈3. Routes south around wall bottom (y<-1.1). 3-node path."
+    },
+    "cross_wall_left": {
+      "status": "pass",
+      "details": "Robot at (6.3,0) → (1,0) across wall. Successfully routes around wall. 3-node path."
+    },
+    "teleop": {
+      "status": "pass",
+      "details": "Works correctly (from previous sessions)."
+    }
+  },
+  "findings": {
+    "wall_polygon": "Wall detected as poly with vertices at (2.9,-1.0) to (4.3,1.6). Contour detection produces proper closed polygon from accumulated obstacle cloud via MapHandler.",
+    "cross_wall_routing": "Working! IsNavNodesConnectFreePolygon correctly blocks edges through wall polygon. IsEdgeBlockedByObstacles ray-cast blocks a few additional edges. Robot routes around wall via contour nodes at wall corners.",
+    "path_quality": "For p0_forward, robot sometimes goes NORTH around wall (y≈2.6) instead of south (y≈-1.1). Both valid but north is longer. This is a graph connectivity issue — the initial contour nodes may have better visibility edges going north.",
+    "goal_edges": "Goal typically connects to 6-9 nodes out of 24-40 total. Polygon collision blocks 17-28 edges, ray-cast blocks 0-2.",
+    "omni_dir_reverted": "omni_dir_goal_threshold=0.5, no omni_dir_diff_threshold. Robot turns to face movement direction as requested."
+  },
+  "remaining_issues": {
+    "path_optimality": "Robot sometimes takes longer path around wall. Could be improved with more exploration or better graph connectivity.",
+    "clicktogal_spurious": "ClickToGoal sets goal to current position on stop_movement, causing FAR to chase spurious goals. Not fixed.",
+    "sim_stability": "DimOS sim process sometimes exits unexpectedly. Not related to navigation changes."
+  }
 }
