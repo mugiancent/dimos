@@ -12,7 +12,7 @@
       flake = false;
     };
     fast-lio = {
-      url = "git+file:///home/unitree/dimos/dimos/hardware/sensors/lidar/fastlio2/cpp/fast-lio-non-ros?ref=dimos-integration&shallow=1";
+      url = "github:jeff-hykin/fastlio2-pure/main";
       flake = false;
     };
   };
