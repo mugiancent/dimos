@@ -73,7 +73,7 @@ class FarPlannerConfig(NativeModuleConfig):
     world_frame: str = "map"
 
     # --- Graph planner params ---
-    converge_dist: float = 0.8
+    converge_dist: float = 2.5
     goal_adjust_radius: float = 10.0
     free_counter_thred: int = 5
     reach_goal_vote_size: int = 5
