@@ -21,7 +21,6 @@ import threading
 
 from dimos.msgs.protocol import DimosMsg
 from dimos.protocol.pubsub.encoders import (
-    JpegEncoderMixin,
     LCMEncoderMixin,
     PickleEncoderMixin,
 )
@@ -148,16 +147,9 @@ class PickleLCM(  # type: ignore[misc]
 ): ...
 
 
-class JpegLCM(  # type: ignore[misc]
-    JpegEncoderMixin,  # type: ignore[type-arg]
-    LCMPubSubBase,
-): ...
-
-
 __all__ = [
     "LCM",
     "Glob",
-    "JpegLCM",
     "LCMEncoderMixin",
     "LCMPubSubBase",
     "PickleLCM",

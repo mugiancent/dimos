@@ -36,6 +36,7 @@ class GlobalConfig(BaseSettings):
     replay: bool = False
     replay_dir: str = "go2_sf_office"
     replay_file: str | None = None
+    record_path: str | None = None
     new_memory: bool = False
     viewer: ViewerBackend = "rerun"
     n_workers: int = 2
@@ -53,7 +54,7 @@ class GlobalConfig(BaseSettings):
     nerf_speed: float = 1.0
     planner_robot_speed: float | None = None
     mcp_port: int = 9990
-    mcp_host: str = "0.0.0.0"
+    mcp_host: str = "127.0.0.1"
     dtop: bool = False
     obstacle_avoidance: bool = True
     detection_model: VlModelName = "moondream"

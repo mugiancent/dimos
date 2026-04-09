@@ -29,21 +29,14 @@ import requests
 import typer
 
 from dimos.agents.mcp.mcp_adapter import McpAdapter, McpError
-from dimos.core.blueprints import autoconnect
 from dimos.core.global_config import GlobalConfig, global_config
 from dimos.core.run_registry import (
-    LOG_BASE_DIR,
-    RunEntry,
-    check_port_conflicts,
-    cleanup_stale,
-    generate_run_id,
     get_most_recent,
     is_pid_alive,
     stop_entry,
 )
-from dimos.robot.get_all_blueprints import get_by_name, get_module_by_name
 from dimos.utils.cli.recorder.run_recorder import main as recorder_main
-from dimos.utils.logging_config import set_run_log_dir, setup_exception_handler, setup_logger
+from dimos.utils.logging_config import setup_logger
 
 logger = setup_logger()
 
@@ -127,6 +120,21 @@ async def _run(
     daemon: bool = typer.Option(False, "--daemon", "-d", help="Run in background"),
     disable: list[str] = typer.Option([], "--disable", help="Module names to disable"),
 ) -> None:
+    """Start a robot blueprint"""
+    logger.info("Starting DimOS")
+
+    from dimos.core.coordination.blueprints import autoconnect
+    from dimos.core.coordination.module_coordinator import ModuleCoordinator
+    from dimos.core.run_registry import (
+        LOG_BASE_DIR,
+        RunEntry,
+        check_port_conflicts,
+        cleanup_stale,
+        generate_run_id,
+    )
+    from dimos.robot.get_all_blueprints import get_by_name, get_module_by_name
+    from dimos.utils.logging_config import set_run_log_dir, setup_exception_handler
+
     setup_exception_handler()
 
     cli_config_overrides: dict[str, Any] = ctx.obj
@@ -161,7 +169,7 @@ async def _run(
         disabled_classes = tuple(get_module_by_name(name).blueprints[0].module for name in disable)
         blueprint = blueprint.disabled_modules(*disabled_classes)
 
-    coordinator = blueprint.build(cli_config_overrides=cli_config_overrides)
+    coordinator = ModuleCoordinator.build(blueprint, cli_config_overrides=cli_config_overrides)
 
     if daemon:
         from dimos.core.daemon import (

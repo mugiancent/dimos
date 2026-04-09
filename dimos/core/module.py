@@ -30,7 +30,6 @@ from typing import (
     get_type_hints,
 )
 
-from langchain_core.tools import tool
 from pydantic import Field
 from reactivex.disposable import CompositeDisposable
 
@@ -48,7 +47,7 @@ from dimos.utils import colors
 from dimos.utils.generic import classproperty
 
 if TYPE_CHECKING:
-    from dimos.core.blueprints import Blueprint
+    from dimos.core.coordination.blueprints import Blueprint
     from dimos.core.introspection.module.info import ModuleInfo
     from dimos.core.rpc_client import RPCClient
 
@@ -148,10 +147,11 @@ class ModuleBase(Configurable[ModuleConfigT], Resource):
 
     @rpc
     def start(self) -> None:
-        pass
+        self._listen_for_recording_commands()
 
     @rpc
     def stop(self) -> None:
+        self._stop_recording()
         self._close_module()
 
     def _close_module(self) -> None:
@@ -372,9 +372,60 @@ class ModuleBase(Configurable[ModuleConfigT], Resource):
     @classproperty
     def blueprint(self) -> _BlueprintPartial:
         # Here to prevent circular imports.
-        from dimos.core.blueprints import Blueprint
+        from dimos.core.coordination.blueprints import Blueprint
 
         return partial(Blueprint.create, self)  # type: ignore[arg-type]
+
+    @rpc
+    def start_recording(self, db_path: str) -> None:
+        self._start_recording(db_path)
+
+    @rpc
+    def stop_recording(self) -> None:
+        self._stop_recording()
+
+    def _start_recording(self, db_path: str) -> None:
+        import time
+
+        from dimos.memory2.store.sqlite import SqliteStore
+
+        self._rec_store = SqliteStore(path=db_path)
+        self._rec_unsubs: list[Callable[[], None]] = []
+        for name, out in self.outputs.items():
+            stream = self._rec_store.stream(name, out.type)
+            payload_mod = f"{out.type.__module__}.{out.type.__qualname__}"
+            reg = self._rec_store._registry.get(name)
+            if reg and "channel" not in reg:
+                reg["channel"] = f"/{name}#{payload_mod}"
+                self._rec_store._registry.put(name, reg)
+
+            def cb(msg: Any, _stream: Any = stream) -> None:
+                ts = getattr(msg, "ts", None) or time.time()
+                _stream.append(msg, ts=ts)
+
+            self._rec_unsubs.append(out.subscribe(cb))
+
+    def _stop_recording(self) -> None:
+        for unsub in getattr(self, "_rec_unsubs", []):
+            unsub()
+        self._rec_unsubs = []
+        if hasattr(self, "_rec_store") and self._rec_store:
+            self._rec_store.stop()
+            self._rec_store = None
+
+    def _listen_for_recording_commands(self) -> None:
+        from dimos.protocol.pubsub.impl.lcmpubsub import PickleLCM, Topic as LCMTopic
+
+        self._rec_cmd_lcm = PickleLCM()
+        self._rec_cmd_lcm.start()
+
+        def on_cmd(msg: dict, topic: Any) -> None:
+            if msg.get("action") == "start":
+                self._start_recording(msg["db_path"])
+            elif msg.get("action") == "stop":
+                self._stop_recording()
+
+        self._rec_cmd_lcm.subscribe(LCMTopic("/dimos/record_cmd"), on_cmd)
 
     @rpc
     def set_module_ref(self, name: str, module_ref: "RPCClient") -> None:
@@ -382,6 +433,8 @@ class ModuleBase(Configurable[ModuleConfigT], Resource):
 
     @rpc
     def get_skills(self) -> list[SkillInfo]:
+        from langchain_core.tools import tool  # ~170ms: deferred to avoid CLI startup cost
+
         skills: list[SkillInfo] = []
         for name in dir(self):
             attr = getattr(self, name)
