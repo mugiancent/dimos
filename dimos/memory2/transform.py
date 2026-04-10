@@ -165,6 +165,68 @@ def smooth(window: int) -> FnIterTransformer[float, float]:
     return FnIterTransformer(_smooth)
 
 
+def peaks(
+    prominence: float = 0.045,
+    distance: float = 5.0,
+    width: float | None = 0.5,
+) -> FnIterTransformer[float, float]:
+    """Yield only the local-maximum observations, gated by peak shape.
+
+    Runs scipy.signal.find_peaks on ``obs.data`` and emits the qualifying
+    observations in timestamp order. Each yielded observation gets its
+    peak's prominence stashed on ``tags["peak_prominence"]``.
+
+    All parameters are in the natural units of the stream (seconds and
+    data-range units), not sample counts. Time-based parameters are
+    converted to sample counts internally using the median sample spacing.
+
+    - ``prominence``: minimum topological prominence to keep. Assumes the
+      upstream data is roughly normalized to [0, 1]; with default 0.1 a peak
+      has to stick up at least 10% of the range above its surroundings.
+      Pass 0.0 to return *every* local maximum with its prominence attached
+      — useful for plotting the distribution and picking a threshold.
+    - ``distance``: minimum time in seconds between detected peaks.
+    - ``width``: minimum peak width in seconds at 50% prominence. Filters
+      sub-second noise spikes. Pass ``None`` to disable.
+    """
+    from scipy.signal import find_peaks
+
+    def _peaks(upstream: Iterator[Observation[float]]) -> Iterator[Observation[float]]:
+        items = list(upstream)
+        if len(items) < 3:
+            return
+        values = [obs.data for obs in items]
+
+        # Median sample spacing — used to convert seconds → samples
+        # consistently for both `distance` and `width`.
+        spacings = sorted(items[i + 1].ts - items[i].ts for i in range(len(items) - 1))
+        median_spacing = spacings[len(spacings) // 2] if spacings else 0.0
+
+        def seconds_to_samples(seconds: float | None) -> int | None:
+            if seconds is None or median_spacing <= 0:
+                return None
+            return max(1, round(seconds / median_spacing))
+
+        # Always pass a numeric `prominence` so scipy populates props["prominences"].
+        # Passing None would skip the computation, leaving tags empty.
+        idx, props = find_peaks(
+            values,
+            prominence=prominence,
+            distance=seconds_to_samples(distance),
+            width=seconds_to_samples(width),
+        )
+        proms = props["prominences"]
+
+        for i, prom in zip(idx, proms, strict=True):
+            obs = items[int(i)]
+            yield obs.derive(
+                data=obs.data,
+                tags={**obs.tags, "peak_prominence": float(prom)},
+            )
+
+    return FnIterTransformer(_peaks)
+
+
 def smooth_time(seconds: float) -> FnIterTransformer[float, float]:
     """Sliding window average over obs.data, by time.
 

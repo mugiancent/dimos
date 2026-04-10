@@ -25,6 +25,45 @@ for i in range(14):
 
 color_check.to_svg("assets/plot_colors.svg")
 ```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ![output](assets/plot_colors.svg)
 
 named colors can also be used explicitly. when you pin a series to one of
@@ -46,6 +85,25 @@ p.add(Series(ts=xs, values=[math.sin(2 * x) for x in xs]))
 p.add(HLine(y=0, style=Style.dashed, opacity=0.5, color="#ff0000"))
 p.to_svg("assets/plot_named.svg")
 ```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ![output](assets/plot_named.svg)
 
@@ -87,6 +145,25 @@ plot.add(
 
 plot.to_svg("assets/plot_robot_data.svg")
 ```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 ![output](assets/plot_robot_data.svg)
@@ -143,7 +220,6 @@ Stream("cache"): 267 items, 2025-12-26 11:09:11 — 2025-12-26 11:13:59 (288.4s)
 ```
 
 
-
 ![output](assets/plot_plantness.svg)
 
 We can be pretty sure the robot saw some plants by peaks at beginning and end of data, but this looks trash, why?
@@ -173,6 +249,25 @@ plot.to_svg("assets/plot_plantness_brightness.svg")
 ```
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ![output](assets/plot_plantness_brightness.svg)
 
 We see that stuff isn't embedded below some minimum brightness.
@@ -195,6 +290,12 @@ plot.to_svg("assets/plot_plantness_gap_fill.svg")
 
 ```
 
+
+
+
+
+
+
 ![output](assets/plot_plantness_gap_fill.svg)
 
 Looks better, these are two or three very obvious peaks, I'm curious let's see what was captured then.
@@ -211,6 +312,7 @@ def peak_image(relative_t: float, tolerance: float = 10.0):
 
 image1 = peak_image(40, tolerance=10)
 image2 = peak_image(249, tolerance=20)
+image3 = peak_image(270, tolerance=20)
 
 plot = Plot()
 
@@ -223,19 +325,62 @@ plot.add(
 )
 
 plot.add(VLine(image1.ts, color=color.red))
-
 plot.add(VLine(image2.ts, color=color.red))
+plot.add(VLine(image3.ts, color=color.red))
 
 plot.to_svg("assets/plot_plantness_marked.svg")
 
-m = mosaic([image1, image2], cols=2)
+m = mosaic([image1, image2, image3])
 m.data.save("assets/plants.png")
 ```
 
 
+![output](assets/plot_plantness_marked.svg)
 
-
+2 plants and one false positive :) in production we'd further filter false positives out by a VLM
 
 ![output](assets/plants.png)
 
-![output](assets/plot_plantness_marked.svg)
+
+Here we were guessing peaks by matching timestamps in the graph, but there is a better way!
+
+# Auto-detecting peaks
+
+Picking peaks by eye is fine for a one-off, but we can feed the stream through
+the `peaks` transform and let it find them for us. It runs `scipy.signal.find_peaks`
+under the hood, filters by topological prominence, and tags each detected peak
+with its prominence on `obs.tags["peak_prominence"]`.
+
+```python session=robotdata
+from dimos.memory2.transform import peaks
+
+
+# Mark each detected peak with a VLine and grab the image at that moment
+plot = Plot()
+plot.add(
+    plantness_query_cached,
+    label="plant-ness",
+    color=color.green,
+    connect=7.5,
+)
+
+peaks = plantness_query_cached.transform(peaks(distance=5.0))
+
+for p in peaks:
+    print(f"t={p.ts - plantness_query_cached.first().ts:6.1f}s  score={p.data:.3f}  prominence={p.tags['peak_prominence']:.3f}")
+    plot.add(VLine(p.ts, color=color.red))
+
+plot.to_svg("assets/plot_plantness_autopeaks.svg")
+
+m = mosaic([images.at(p.ts).first() for p in peaks])
+m.data.save("assets/plants_auto.png")
+```
+
+<!--Result:-->
+```
+t=  37.0s  score=0.259  prominence=0.067
+t= 240.4s  score=0.243  prominence=0.047
+```
+
+![output](assets/plot_plantness_autopeaks.svg)
+![output](assets/plants_auto.png)
