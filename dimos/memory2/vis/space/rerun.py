@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Rerun renderer for Drawing2D. Logs scene elements as 3D archetypes."""
+"""Rerun renderer for Space. Logs scene elements as 3D archetypes."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any
 
 from dimos.memory2.type.observation import Observation
 from dimos.memory2.vis.color import hex_to_rgb
-from dimos.memory2.vis.type import Arrow, Box3D, Camera, Point, Polyline, Pose, Text
+from dimos.memory2.vis.space.elements import Arrow, Box3D, Camera, Point, Polyline, Pose, Text
 from dimos.msgs.geometry_msgs.Quaternion import Quaternion
 from dimos.msgs.geometry_msgs.Transform import Transform
 from dimos.msgs.geometry_msgs.Vector3 import Vector3
@@ -29,7 +29,7 @@ from dimos.msgs.nav_msgs.OccupancyGrid import OccupancyGrid
 from dimos.msgs.sensor_msgs.PointCloud2 import PointCloud2
 
 if TYPE_CHECKING:
-    from dimos.memory2.vis.drawing.drawing import Drawing2D
+    from dimos.memory2.vis.space.space import Space
 
 # base_link → camera_optical extrinsics (applied at render time for image observations)
 _BASE_TO_OPTICAL = Transform(
@@ -45,8 +45,8 @@ _BASE_TO_OPTICAL = Transform(
 )
 
 
-def render(drawing: Drawing2D, app_id: str = "drawing", spawn: bool = True) -> None:
-    """Render a Drawing2D to a Rerun viewer."""
+def render(space: Space, app_id: str = "space", spawn: bool = True) -> None:
+    """Render a Space to a Rerun viewer."""
     import rerun as rr
     import rerun.blueprint as rrb
 
@@ -65,7 +65,7 @@ def render(drawing: Drawing2D, app_id: str = "drawing", spawn: bool = True) -> N
     observations: list[Observation[Any]] = []
     panels: list[Observation[Any]] = []
 
-    for el in drawing.elements:
+    for el in space.elements:
         if isinstance(el, Observation):
             if _is_image(el.data) and el.pose is None:
                 panels.append(el)

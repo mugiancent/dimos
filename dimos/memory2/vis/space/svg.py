@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""SVG renderer for Drawing2D.
+"""SVG renderer for Space.
 
 Top-down XY projection (Z ignored). Renders in world coordinates with Y-flip.
 The SVG viewBox is computed from actual rendered content, so all element types
@@ -32,21 +32,21 @@ import numpy as np
 from PIL import Image as PILImage
 
 from dimos.memory2.type.observation import Observation
-from dimos.memory2.vis.type import (
+from dimos.memory2.vis.space.elements import (
     Arrow,
     Box3D,
     Camera,
     Point,
     Polyline,
     Pose,
-    SceneElement,
+    SpaceElement,
     Text,
 )
 from dimos.msgs.nav_msgs.OccupancyGrid import OccupancyGrid
 from dimos.msgs.sensor_msgs.PointCloud2 import PointCloud2
 
 if TYPE_CHECKING:
-    from dimos.memory2.vis.drawing.drawing import Drawing2D
+    from dimos.memory2.vis.space.space import Space
 
 
 @dataclass
@@ -250,7 +250,7 @@ def _render_occupancy_grid(el: OccupancyGrid, b: Bounds) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _render_element(el: SceneElement, b: Bounds) -> str:
+def _render_element(el: SpaceElement, b: Bounds) -> str:
     if isinstance(el, Point):
         return _render_point(el, b)
     elif isinstance(el, Pose):
@@ -285,16 +285,16 @@ def _render_element(el: SceneElement, b: Bounds) -> str:
 
 
 def render(
-    drawing: Drawing2D,
+    space: Space,
     path: str | Path | None = None,
     width_px: float = 800,
     padding: float = 0.5,
 ) -> str:
-    """Render a Drawing2D to an SVG string, optionally writing to *path*."""
+    """Render a Space to an SVG string, optionally writing to *path*."""
     b = Bounds()
     fragments: list[str] = []
 
-    for el in drawing.elements:
+    for el in space.elements:
         fragments.append(_render_element(el, b))
 
     if b.empty:

@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Drawing2D builder for memory2 visualization.
+"""Space: 2D spatial rendering canvas (world frame).
 
-Drawing2D.add() is a smart dispatcher: it accepts vis types directly (explicit
-rendering mode), raw dimos msgs (auto-wrapped into default vis type), or
-observations (smart dispatch based on data type).
+Space.add() is a smart dispatcher: it accepts element types directly
+(explicit rendering mode), raw dimos msgs (auto-wrapped into default
+element), or observations (smart dispatch based on data type).
 """
 
 from __future__ import annotations
@@ -24,16 +24,15 @@ from __future__ import annotations
 from typing import Any
 
 from dimos.memory2.type.observation import EmbeddedObservation, Observation
-from dimos.memory2.vis.color import color as resolve_color
-from dimos.memory2.vis.type import (
+from dimos.memory2.vis.color import Color, color as resolve_color
+from dimos.memory2.vis.space.elements import (
     Arrow,
     Box3D,
     Camera,
-    Color,
     Point,
     Polyline,
     Pose,
-    SceneElement,
+    SpaceElement,
     Text,
 )
 from dimos.msgs.geometry_msgs.Point import Point as GeoPoint
@@ -61,25 +60,26 @@ def _autocolor(item: Any, group: str, cmap: str = "turbo") -> Color | None:
     return None
 
 
-class Drawing2D:
-    """Accumulates scene elements for spatial 2D visualization.
+class Space:
+    """2D spatial rendering canvas (world frame).
 
-    Elements can be added as:
-    - Vis types directly: ``d.add(Pose(posestamped, color="red"))``
-    - Raw dimos msgs with style kwargs: ``d.add(posestamped, color="red")``
-    - Observations (smart dispatch): ``d.add(observation)``
-    - Lists of EmbeddedObservations: ``d.add(results)`` → similarity heatmap
-    - Streams / iterables: ``d.add(stream)`` → materializes and adds each obs.data
+    Accumulates elements for spatial visualization. Elements can be added as:
+    - Element types directly: ``s.add(Pose(posestamped, color="red"))``
+    - Raw dimos msgs with style kwargs: ``s.add(posestamped, color="red")``
+    - Observations (smart dispatch): ``s.add(observation)``
+    - Lists of EmbeddedObservations: ``s.add(results)`` → similarity heatmap
+    - Streams / iterables: ``s.add(stream)`` → materializes and adds each obs.data
     """
 
     def __init__(self) -> None:
-        self._elements: list[SceneElement] = []
+        self._elements: list[SpaceElement] = []
+        self._group_seq: int = 0
 
-    def add(self, element: Any, **kwargs: Any) -> Drawing2D:
-        """Add a scene element with smart dispatch.
+    def add(self, element: Any, **kwargs: Any) -> Space:
+        """Add an element with smart dispatch.
 
-        Vis types (Pose, Arrow, Point, etc.) are stored as-is.
-        Raw dimos msgs are auto-wrapped into their default vis type,
+        Element types (Pose, Arrow, Point, etc.) are stored as-is.
+        Raw dimos msgs are auto-wrapped into their default element,
         with ``**kwargs`` forwarded as style (color, label, etc.).
         """
 
@@ -92,7 +92,7 @@ class Drawing2D:
         elif isinstance(element, Observation):
             self.add_observation(element, **kwargs)
         elif hasattr(element, "__iter__"):
-            self._group_seq = getattr(self, "_group_seq", 0) + 1
+            self._group_seq += 1
             group = f"auto_{self._group_seq}"
             cmap = kwargs.pop("cmap", "turbo")
             for item in element:
@@ -103,14 +103,14 @@ class Drawing2D:
                     self.add(item, **kwargs)
         else:
             raise TypeError(
-                f"Drawing2D.add() does not know how to handle {type(element).__name__}. "
-                f"Pass a vis type (Pose, Arrow, Point, ...) or a dimos msg."
+                f"Space.add() does not know how to handle {type(element).__name__}. "
+                f"Pass an element type (Pose, Arrow, Point, ...) or a dimos msg."
             )
 
         return self
 
     def add_dimos_msg(self, msg: DimosMsg, **kwargs: Any) -> None:
-        """Dispatch a DimosMsg to its default vis type."""
+        """Dispatch a DimosMsg to its default element type."""
         if isinstance(msg, PoseStamped):
             self._elements.append(Pose(msg=msg, **kwargs))
         elif isinstance(msg, GeoPose):
@@ -134,7 +134,7 @@ class Drawing2D:
             )
         else:
             raise TypeError(
-                f"No default vis type for {type(msg).__name__}. "
+                f"No default element for {type(msg).__name__}. "
                 f"Wrap it explicitly (e.g. Pose(msg), Arrow(msg))."
             )
 
@@ -146,7 +146,7 @@ class Drawing2D:
         """Store the observation directly; renderers decide how to display it."""
         self._elements.append(obs)
 
-    def base_map(self, grid: OccupancyGrid) -> Drawing2D:
+    def base_map(self, grid: OccupancyGrid) -> Space:
         """Add an OccupancyGrid as the background map."""
         return self.add(grid)
 
@@ -171,7 +171,7 @@ class Drawing2D:
 
     def to_svg(self, path: str | None = None) -> str:
         """Render to SVG string. Optionally write to file."""
-        from dimos.memory2.vis.drawing.svg import render
+        from dimos.memory2.vis.space.svg import render
 
         self._resolve_colors()
         svg = render(self)
@@ -180,9 +180,9 @@ class Drawing2D:
                 f.write(svg)
         return svg
 
-    def to_rerun(self, app_id: str = "drawing", spawn: bool = True) -> None:
+    def to_rerun(self, app_id: str = "space", spawn: bool = True) -> None:
         """Render to Rerun viewer."""
-        from dimos.memory2.vis.drawing.rerun import render
+        from dimos.memory2.vis.space.rerun import render
 
         self._resolve_colors()
         render(self, app_id=app_id, spawn=spawn)
@@ -192,7 +192,7 @@ class Drawing2D:
         return self.to_svg()
 
     @property
-    def elements(self) -> list[SceneElement]:
+    def elements(self) -> list[SpaceElement]:
         """Read-only access to accumulated elements."""
         return list(self._elements)
 
@@ -205,8 +205,4 @@ class Drawing2D:
             name = type(el).__name__
             counts[name] = counts.get(name, 0) + 1
         parts = [f"{n}={c}" for n, c in sorted(counts.items())]
-        return f"Drawing2D({', '.join(parts)})"
-
-
-# Backwards compatibility alias
-Drawing = Drawing2D
+        return f"Space({', '.join(parts)})"

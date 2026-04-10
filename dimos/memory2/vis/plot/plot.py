@@ -12,17 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""GraphTime: time-series graph builder for memory2 visualization."""
+"""Plot: 2D chart builder for memory2 visualization."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from dimos.memory2.vis.type import GraphElement, HLine, Markers, Series
+from dimos.memory2.vis.plot.elements import HLine, Markers, PlotElement, Series
 
 
-class GraphTime:
-    """Time-series graph. X axis is always time.
+class Plot:
+    """2D chart. Today treats X as time; generalized axes are follow-up work.
 
     Elements can be added as:
     - Series/Markers/HLine directly
@@ -31,10 +31,10 @@ class GraphTime:
     """
 
     def __init__(self) -> None:
-        self._elements: list[GraphElement] = []
+        self._elements: list[PlotElement] = []
 
-    def add(self, element: Any, **kwargs: Any) -> GraphTime:
-        """Add a graph element with smart dispatch."""
+    def add(self, element: Any, **kwargs: Any) -> Plot:
+        """Add a plot element with smart dispatch."""
         from dimos.memory2.stream import Stream
         from dimos.memory2.type.observation import Observation
 
@@ -50,12 +50,10 @@ class GraphTime:
             if items and isinstance(items[0], Observation):
                 self._add_from_observations(items, **kwargs)
             else:
-                raise TypeError(
-                    f"GraphTime.add() cannot handle iterable of {type(items[0]).__name__}."
-                )
+                raise TypeError(f"Plot.add() cannot handle iterable of {type(items[0]).__name__}.")
         else:
             raise TypeError(
-                f"GraphTime.add() does not know how to handle {type(element).__name__}. "
+                f"Plot.add() does not know how to handle {type(element).__name__}. "
                 f"Pass Series, Markers, HLine, a Stream, or a list of Observations."
             )
 
@@ -69,7 +67,7 @@ class GraphTime:
 
     def to_svg(self, path: str | None = None) -> str:
         """Render to SVG string. Optionally write to file."""
-        from dimos.memory2.vis.graph.svg import render
+        from dimos.memory2.vis.plot.svg import render
 
         svg = render(self)
         if path is not None:
@@ -77,9 +75,9 @@ class GraphTime:
                 f.write(svg)
         return svg
 
-    def to_rerun(self, app_id: str = "graph_time", spawn: bool = True) -> None:
-        """Render to Rerun viewer."""
-        from dimos.memory2.vis.graph.rerun import render
+    def to_rerun(self, app_id: str = "plot", spawn: bool = True) -> None:
+        """Render to Rerun viewer (placeholder — currently a no-op)."""
+        from dimos.memory2.vis.plot.rerun import render
 
         render(self, app_id=app_id, spawn=spawn)
 
@@ -88,7 +86,7 @@ class GraphTime:
         return self.to_svg()
 
     @property
-    def elements(self) -> list[GraphElement]:
+    def elements(self) -> list[PlotElement]:
         """Read-only access to accumulated elements."""
         return list(self._elements)
 
@@ -101,4 +99,4 @@ class GraphTime:
             name = type(el).__name__
             counts[name] = counts.get(name, 0) + 1
         parts = [f"{n}={c}" for n, c in sorted(counts.items())]
-        return f"GraphTime({', '.join(parts)})"
+        return f"Plot({', '.join(parts)})"

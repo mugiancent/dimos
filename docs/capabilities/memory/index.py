@@ -25,9 +25,9 @@ from dimos.mapping.pointclouds.occupancy import (
 from dimos.memory2.store.sqlite import SqliteStore
 from dimos.memory2.transform import normalize, smooth, speed
 from dimos.memory2.vis.color import color
-from dimos.memory2.vis.drawing.drawing import Drawing2D
-from dimos.memory2.vis.graph.graph import GraphTime
-from dimos.memory2.vis.type import Point
+from dimos.memory2.vis.plot.plot import Plot
+from dimos.memory2.vis.space.elements import Point
+from dimos.memory2.vis.space.space import Space
 from dimos.models.embedding.clip import CLIPModel
 from dimos.utils.data import get_data
 
@@ -60,7 +60,7 @@ global_map = pickle.loads(get_data("unitree_go2_bigoffice_map.pickle").read_byte
 costmap = simple_inflate(general_occupancy(global_map), 0.05)
 
 print("brightness start")
-drawing_brightness = Drawing2D()
+drawing_brightness = Space()
 drawing_brightness.add(costmap)
 
 store.streams.color_image.map(lambda obs: obs.derive(data=obs.data.brightness)).transform(
@@ -75,7 +75,7 @@ drawing_brightness.to_svg("assets/space_brightness.svg")
 
 print("speed start")
 
-drawing_speed = Drawing2D()
+drawing_speed = Space()
 drawing_speed.add(costmap)
 
 store.streams.color_image.transform(speed()).transform(smooth(20)).transform(normalize()).tap(
@@ -97,7 +97,7 @@ text_vector = clip.embed_text(search_text)
 
 print("similarity start")
 
-drawing = Drawing2D()
+drawing = Space()
 drawing.add(costmap)
 
 similarity_stream = (
@@ -119,21 +119,21 @@ drawing.to_svg("assets/space_embeddings.svg")
 
 print("graphs start")
 
-graph = GraphTime()
+plot = Plot()
 
-graph.add(
+plot.add(
     similarity_stream.map(lambda obs: obs.derive(data=obs.data * 3)),
     label=f'similarity to "{search_text}"',
     color="#e74c3c",
 )
 
-graph.add(
+plot.add(
     store.streams.color_image.transform(speed()).transform(smooth(30)),
     label="speed (m/s)",
     color="#3498db",
 )
 
-graph.add(
+plot.add(
     store.streams.color_image.map(lambda obs: obs.derive(data=obs.data.brightness)).transform(
         smooth(10)
     ),
@@ -141,4 +141,4 @@ graph.add(
     color="#f1c40f",
 )
 
-graph.to_svg("assets/timegraph.svg")
+plot.to_svg("assets/timegraph.svg")

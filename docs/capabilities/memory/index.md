@@ -7,9 +7,9 @@ from dimos.mapping.occupancy.inflation import simple_inflate
 from dimos.memory2.store.sqlite import SqliteStore
 from dimos.memory2.vis.color import color
 from dimos.memory2.transform import downsample, throttle, speed, smooth
-from dimos.memory2.vis.drawing.drawing import Drawing2D as Drawing
+from dimos.memory2.vis.space.space import Space
 from dimos.utils.data import get_data
-from dimos.memory2.vis.type import Point
+from dimos.memory2.vis.space.elements import Point
 ```
 
 </details>
@@ -37,7 +37,7 @@ Any stream is drawable
 ```python session=mem output=none
 global_map = pickle.loads(get_data("unitree_go2_bigoffice_map.pickle").read_bytes())
 
-drawing = Drawing()
+drawing = Space()
 
 # this is not neccessary but we use a global map as a nice base for a drawing
 drawing.add(global_map)
@@ -55,7 +55,7 @@ we can create new streams by querying existing streams, and we can save, further
 
 ```python session=mem output=none
 
-drawing = Drawing()
+drawing = Space()
 drawing.add(global_map)
 
 drawing.add(
@@ -75,7 +75,7 @@ drawing.to_svg("assets/speed.svg")
 we can do all kinds of things with this, for example map out room lighting
 
 ```python session=mem output=none
-drawing = Drawing()
+drawing = Space()
 drawing.add(global_map)
 
 drawing.add(
@@ -129,7 +129,7 @@ let's query it!
 ```python session=mem output=none
 from dimos.models.embedding.clip import CLIPModel
 
-drawing = Drawing()
+drawing = Space()
 drawing.add(global_map)
 
 clip = CLIPModel()
@@ -147,7 +147,7 @@ We don't really have to deal with the whole global map actually, let's get top 1
 ```python session=mem output=none
 from dimos.models.embedding.clip import CLIPModel
 from dimos.mapping.voxels import VoxelMapTransformer
-drawing = Drawing()
+drawing = Space()
 
 # this is defined here, but not executed
 matches = store.streams.color_image_embedded.search(search_vector, k=30)

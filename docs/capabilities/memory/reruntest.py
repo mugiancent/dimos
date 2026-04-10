@@ -20,8 +20,8 @@ from dimos.mapping.pointclouds.occupancy import general_occupancy
 from dimos.memory2.store.sqlite import SqliteStore
 from dimos.memory2.transform import normalize, smooth
 from dimos.memory2.vis.color import color
-from dimos.memory2.vis.drawing.drawing import Drawing2D
-from dimos.memory2.vis.type import Point
+from dimos.memory2.vis.space.elements import Point
+from dimos.memory2.vis.space.space import Space
 from dimos.memory2.vis.utils import mosaic
 from dimos.models.embedding.clip import CLIPModel
 from dimos.utils.data import get_data
@@ -36,7 +36,7 @@ clip = CLIPModel()
 
 embedded = store.streams.color_image_embedded
 
-drawing = Drawing2D()
+drawing = Space()
 # drawing.add(costmap)
 # drawing.add(global_map)
 

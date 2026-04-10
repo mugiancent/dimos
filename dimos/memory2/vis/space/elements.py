@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Visualization types for the memory2 drawing language.
+"""Element types for the Space drawing language.
 
-Each vis type wraps one or more dimos.msgs with rendering intent + style.
+Each element wraps one or more dimos.msgs with rendering intent + style.
 For example, Pose(posestamped) says "render this PoseStamped as a circle +
 heading arrow", while Arrow(posestamped) says "render it as an arrow only."
 
@@ -26,6 +26,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Union
+
+from dimos.memory2.vis.color import Color
 
 if TYPE_CHECKING:
     from dimos.msgs.geometry_msgs.Point import Point as GeoPoint
@@ -39,26 +41,10 @@ if TYPE_CHECKING:
 
 
 @dataclass
-class Color:
-    """Deferred color resolved at render time from a value range.
-
-    Elements with the same ``group`` share an auto-computed min/max range.
-    Can be used as a factory: ``speed = Color("speed", cmap="turbo"); speed(2.5)``.
-    """
-
-    group: str
-    value: float | None = None
-    cmap: str = "turbo"
-
-    def __call__(self, value: float) -> Color:
-        return Color(group=self.group, value=value, cmap=self.cmap)
-
-
-@dataclass
 class Pose:
     """Circle + heading arrow at a pose.
 
-    Default vis type for PoseStamped.
+    Default element for PoseStamped.
     SVG: <circle> at .msg.x/.y + heading <line> from .msg.yaw
     Rerun: msg.to_rerun() (Transform3D) + msg.to_rerun_arrow()
     """
@@ -86,7 +72,7 @@ class Arrow:
 class Point:
     """Dot at a position.
 
-    Default vis type for geometry_msgs.Point / PointStamped.
+    Default element for geometry_msgs.Point / PointStamped.
     SVG: <circle> + optional <text> label
     Rerun: rr.Points3D
     """
@@ -154,8 +140,7 @@ class Text:
     color: str | Color = "#333333"
 
 
-# Union of all types that can appear in a Drawing2D
-SceneElement = Union[
+SpaceElement = Union[
     Pose,
     Arrow,
     Point,
@@ -167,41 +152,3 @@ SceneElement = Union[
     "PointCloud2",  # pass-through, rerun renders full 3D, SVG collapses to occupancy grid
     "Observation",  # pass-through, renderer decides presentation (covers EmbeddedObservation)
 ]
-
-
-# --- GraphTime element types ---
-
-
-@dataclass
-class Series:
-    """Line connecting (t, y) points."""
-
-    ts: list[float]
-    values: list[float]
-    color: str = "#3498db"
-    width: float = 1.5
-    label: str | None = None
-
-
-@dataclass
-class Markers:
-    """Scatter dots at (t, y) points."""
-
-    ts: list[float]
-    values: list[float]
-    color: str = "#e74c3c"
-    radius: float = 0.5
-    label: str | None = None
-
-
-@dataclass
-class HLine:
-    """Horizontal reference line."""
-
-    y: float
-    color: str = "#888888"
-    style: str = "dashed"
-    label: str | None = None
-
-
-GraphElement = Union[Series, Markers, HLine]

@@ -16,7 +16,24 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import functools
+
+
+@dataclass
+class Color:
+    """Deferred color resolved at render time from a value range.
+
+    Elements with the same ``group`` share an auto-computed min/max range.
+    Can be used as a factory: ``speed = Color("speed", cmap="turbo"); speed(2.5)``.
+    """
+
+    group: str
+    value: float | None = None
+    cmap: str = "turbo"
+
+    def __call__(self, value: float) -> Color:
+        return Color(group=self.group, value=value, cmap=self.cmap)
 
 
 @functools.lru_cache(maxsize=16)

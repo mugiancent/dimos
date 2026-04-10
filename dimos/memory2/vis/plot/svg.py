@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Matplotlib-based SVG renderer for GraphTime."""
+"""Matplotlib-based SVG renderer for Plot."""
 
 from __future__ import annotations
 
@@ -22,16 +22,16 @@ from typing import TYPE_CHECKING
 import matplotlib
 import matplotlib.pyplot as plt
 
-from dimos.memory2.vis.type import HLine, Markers, Series
+from dimos.memory2.vis.plot.elements import HLine, Markers, Series
 
 if TYPE_CHECKING:
-    from dimos.memory2.vis.graph.graph import GraphTime
+    from dimos.memory2.vis.plot.plot import Plot
 
 matplotlib.use("Agg")
 
 
-def render(graph: GraphTime, width: float = 10, height: float = 3.5) -> str:
-    """Render a GraphTime to an SVG string via matplotlib."""
+def render(plot: Plot, width: float = 10, height: float = 3.5) -> str:
+    """Render a Plot to an SVG string via matplotlib."""
     with plt.style.context("dark_background"):
         fig, ax = plt.subplots(figsize=(width, height))
         fig.patch.set_alpha(0.0)
@@ -39,7 +39,7 @@ def render(graph: GraphTime, width: float = 10, height: float = 3.5) -> str:
         ax.grid(True, color="#2a2a4a", linewidth=0.5)
 
         has_legend = False
-        for el in graph.elements:
+        for el in plot.elements:
             if isinstance(el, Series):
                 ax.plot(el.ts, el.values, color=el.color, linewidth=el.width, label=el.label)
                 if el.label:
