@@ -169,17 +169,15 @@ class PubSubRPCMixin(RPCSpec, PubSub[TopicT, MsgT], Generic[TopicT, MsgT]):
         """
         self._shutdown_thread_pool()
 
-        # Stop the LCM loop BEFORE unsubscribing. Doing it the other way
-        # triggers a NULL-deref in LCM's C code.  This order is safer because
-        # unsub() is either a no-op (LCM destroyed) or safe (no concurrent
-        # dispatch).
-        if hasattr(super(), "stop"):
-            super().stop()  # type: ignore[misc]
-
+        # Cleanup shared response subscriptions
         with self._response_subs_lock:
             for unsub, _ in self._response_subs.values():
                 unsub()
             self._response_subs.clear()
+
+        # Call parent stop if it exists
+        if hasattr(super(), "stop"):
+            super().stop()  # type: ignore[misc]
 
     def call(self, name: str, arguments: Args, cb: Callable | None):  # type: ignore[no-untyped-def, type-arg]
         if cb is None:
@@ -211,7 +209,9 @@ class PubSubRPCMixin(RPCSpec, PubSub[TopicT, MsgT], Generic[TopicT, MsgT]):
                     if res_id is None:
                         return
 
-                    callback = callbacks_dict.pop(res_id, None)
+                    # Look up callback for this msg_id
+                    with self._response_subs_lock:
+                        callback = callbacks_dict.pop(res_id, None)
 
                     if callback is None:
                         return  # No callback registered (already handled or timed out)

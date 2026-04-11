@@ -52,12 +52,6 @@ class BlockingLCM:
         self.unsubscribe_called = threading.Event()
         self.subscription = BlockingSubscription()
 
-    def fileno(self) -> int:
-        # Called by LCMService.start() to pre-warm LCM recv setup. A real LCM
-        # sets up sockets and runs a self-test here; for the fake we just
-        # return a sentinel fd since nothing will select() on it.
-        return -1
-
     def handle_timeout(self, _timeout: int) -> None:
         self.handle_entered.set()
         self.release_handle.wait(timeout=1.0)
@@ -329,7 +323,7 @@ def fake_pub_sub(fake_lcm):
     pubsub.stop()
 
 
-def test_publish_waits_for_handle_loop(fake_lcm, fake_pub_sub):
+def test_publish_proceeds_during_handle_loop(fake_lcm, fake_pub_sub):
     assert fake_lcm.handle_entered.wait(timeout=0.5)
 
     publisher = threading.Thread(
@@ -338,20 +332,14 @@ def test_publish_waits_for_handle_loop(fake_lcm, fake_pub_sub):
     )
     publisher.start()
 
-    # Loop holds _l_lock inside handle_timeout; publish waits for the lock.
-    assert not fake_lcm.publish_called.wait(timeout=0.1)
-    assert publisher.is_alive()
-
-    # Releasing handle_timeout drops _l_lock; publish now proceeds.
-    fake_lcm.release_handle.set()
-
-    assert fake_lcm.publish_called.wait(timeout=1.0)
+    assert fake_lcm.publish_called.wait(timeout=0.5)
     publisher.join(timeout=1.0)
     assert not publisher.is_alive()
 
+    fake_lcm.release_handle.set()
 
-def test_subscribe_waits_for_handle_loop(fake_lcm, fake_pub_sub):
-    """subscribe() must block while the loop thread is inside handle_timeout()."""
+
+def test_subscribe_proceeds_during_handle_loop(fake_lcm, fake_pub_sub):
     assert fake_lcm.handle_entered.wait(timeout=0.5)
 
     subscriber = threading.Thread(
@@ -360,27 +348,16 @@ def test_subscribe_waits_for_handle_loop(fake_lcm, fake_pub_sub):
     )
     subscriber.start()
 
-    assert not fake_lcm.subscribe_called.wait(timeout=0.1)
-    assert subscriber.is_alive()
-
-    fake_lcm.release_handle.set()
-
-    assert fake_lcm.subscribe_called.wait(timeout=1.0)
+    assert fake_lcm.subscribe_called.wait(timeout=0.5)
     subscriber.join(timeout=1.0)
     assert not subscriber.is_alive()
     assert fake_lcm.subscription.queue_capacity == 10000
 
-
-def test_unsubscribe_waits_for_handle_loop(fake_lcm, fake_pub_sub):
-    """unsubscribe() must block while the loop thread is inside handle_timeout().
-
-    This is the specific race whose resolution fixes the segfault in
-    pylcm.c. Unsubscribing from another thread while dispatch is running
-    would set subs_obj->lcm_obj = NULL under the nose of pylcm_msg_handler.
-    """
-    # Let the first handle_timeout complete so we can subscribe cleanly.
-    assert fake_lcm.handle_entered.wait(timeout=0.5)
     fake_lcm.release_handle.set()
+
+
+def test_unsubscribe_proceeds_during_handle_loop(fake_lcm, fake_pub_sub):
+    assert fake_lcm.handle_entered.wait(timeout=0.5)
 
     unsubscribe_holder: dict[str, object] = {}
 
@@ -389,28 +366,19 @@ def test_unsubscribe_waits_for_handle_loop(fake_lcm, fake_pub_sub):
 
     subscriber = threading.Thread(target=do_subscribe, daemon=True)
     subscriber.start()
-    assert fake_lcm.subscribe_called.wait(timeout=1.0)
+    assert fake_lcm.subscribe_called.wait(timeout=0.5)
     subscriber.join(timeout=1.0)
     assert not subscriber.is_alive()
-
-    # Reset gates so the next handle_timeout iteration blocks again.
-    fake_lcm.handle_entered.clear()
-    fake_lcm.release_handle.clear()
-    assert fake_lcm.handle_entered.wait(timeout=1.0)
 
     unsubscribe = unsubscribe_holder["fn"]
     unsub_thread = threading.Thread(target=unsubscribe, daemon=True)  # type: ignore[arg-type]
     unsub_thread.start()
 
-    # Loop holds _l_lock; unsubscribe waits for the lock.
-    assert not fake_lcm.unsubscribe_called.wait(timeout=0.1)
-    assert unsub_thread.is_alive()
-
-    fake_lcm.release_handle.set()
-
-    assert fake_lcm.unsubscribe_called.wait(timeout=1.0)
+    assert fake_lcm.unsubscribe_called.wait(timeout=0.5)
     unsub_thread.join(timeout=1.0)
     assert not unsub_thread.is_alive()
+
+    fake_lcm.release_handle.set()
 
 
 def test_stop_from_within_lcm_thread(mocker):
@@ -422,9 +390,6 @@ def test_stop_from_within_lcm_thread(mocker):
     class SelfStoppingLCM:
         def __init__(self) -> None:
             self.done = threading.Event()
-
-        def fileno(self) -> int:
-            return -1
 
         def handle_timeout(self, _timeout: int) -> None:
             if not self.done.is_set():
@@ -455,57 +420,3 @@ def test_stop_from_within_lcm_thread(mocker):
     assert not thread.is_alive()
     assert service.l is None
     assert service._thread is None
-
-
-def test_handler_can_publish_via_rlock_reentry(mocker):
-    """A message handler dispatched from handle_timeout runs on the loop
-    thread while it already holds _l_lock. Reentry must work so the handler
-    can call self.publish/subscribe/unsubscribe. This is why _l_lock is an
-    RLock rather than a plain Lock.
-    """
-    publish_calls: list[tuple[str, bytes]] = []
-    handler_done = threading.Event()
-
-    class ReentrantLCM:
-        def __init__(self) -> None:
-            self._handler = None
-            self._dispatched = False
-            self._subscription = BlockingSubscription()
-
-        def fileno(self) -> int:
-            return -1
-
-        def handle_timeout(self, _timeout: int) -> None:
-            # Dispatch one fake message on the first call after a handler
-            # has been registered. The handler will call self.publish, which
-            # must reenter _l_lock recursively on the loop thread.
-            if self._handler is not None and not self._dispatched:
-                self._dispatched = True
-                self._handler("/req", b"req-payload")
-                handler_done.set()
-
-        def publish(self, channel: str, message: bytes) -> None:
-            publish_calls.append((channel, message))
-
-        def subscribe(self, _channel, handler) -> BlockingSubscription:
-            self._handler = handler
-            return self._subscription
-
-        def unsubscribe(self, _subscription) -> None:
-            pass
-
-    fake = ReentrantLCM()
-    mocker.patch("dimos.protocol.service.lcmservice.lcm_mod.LCM", return_value=fake)
-
-    pubsub = LCMPubSubBase()
-    pubsub.start()
-
-    def reentrant_callback(_msg: bytes, _topic: Topic) -> None:
-        pubsub.publish(Topic("/res"), b"res-payload")
-
-    pubsub.subscribe(Topic("/req"), reentrant_callback)
-
-    assert handler_done.wait(timeout=2.0)
-    pubsub.stop()
-
-    assert ("/res", b"res-payload") in publish_calls
