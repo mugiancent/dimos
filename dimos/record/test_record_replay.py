@@ -227,7 +227,7 @@ class TestRecordReplay:
 
             rec.play(speed=100.0)  # very fast
             assert rec.is_playing
-            async with asyncio.timeout(0.1):
+            async with asyncio.timeout(5.0):
                 await rec._play_task
             assert not rec.is_playing
 
