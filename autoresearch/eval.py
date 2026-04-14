@@ -244,8 +244,7 @@ def run_benchmark(timeout: int) -> BenchmarkResult:
     # Insert after dimos flags, before the "run" subcommand
     replay_cmd = list(BASE_REPLAY_CMD)
     if extra_args:
-        dimos_idx = replay_cmd.index("dimos")
-        run_idx = replay_cmd.index("run", dimos_idx + 1)
+        run_idx = replay_cmd.index("run")
         for arg in reversed(extra_args):
             replay_cmd.insert(run_idx, arg)
 
