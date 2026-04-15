@@ -355,7 +355,7 @@ class TestBufferConfiguratorMacOS:
     def test_explanation_lists_needed_changes(self) -> None:
         configurator = BufferConfiguratorMacOS()
         configurator.needs = [
-            ("kern.ipc.maxsockbuf", BufferConfiguratorMacOS.TARGET),
+            ("kern.ipc.maxsockbuf", BufferConfiguratorMacOS.TARGET, BufferConfiguratorMacOS.TARGET),
         ]
         explanation = configurator.explanation()
         assert "kern.ipc.maxsockbuf" in explanation
@@ -363,7 +363,7 @@ class TestBufferConfiguratorMacOS:
     def test_fix_writes_needed_values(self) -> None:
         configurator = BufferConfiguratorMacOS()
         configurator.needs = [
-            ("kern.ipc.maxsockbuf", BufferConfiguratorMacOS.TARGET),
+            ("kern.ipc.maxsockbuf", BufferConfiguratorMacOS.TARGET, BufferConfiguratorMacOS.TARGET),
         ]
         with patch(
             "dimos.protocol.service.system_configurator.lcm._write_sysctl_int"
