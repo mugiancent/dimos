@@ -41,11 +41,8 @@ Example usage::
 
 from __future__ import annotations
 
-import collections
-import enum
 import functools
 import inspect
-import json
 import os
 from pathlib import Path
 import signal
@@ -71,11 +68,6 @@ else:
 logger = setup_logger()
 
 
-class LogFormat(enum.Enum):
-    TEXT = "text"
-    JSON = "json"
-
-
 class NativeModuleConfig(ModuleConfig):
     """Configuration for a native (C/C++) subprocess module."""
 
@@ -85,7 +77,6 @@ class NativeModuleConfig(ModuleConfig):
     extra_args: list[str] = Field(default_factory=list)
     extra_env: dict[str, str] = Field(default_factory=dict)
     shutdown_timeout: float = DEFAULT_THREAD_JOIN_TIMEOUT
-    log_format: LogFormat = LogFormat.TEXT
     rebuild_on_change: list[PathEntry] | None = None
     # When True, always invoke ``build_command`` on start, bypassing the
     # ``rebuild_on_change`` check.  Useful with nix-style builds that are
@@ -149,10 +140,6 @@ class NativeModule(Module):
     _process: subprocess.Popen[bytes] | None = None
     _watchdog: threading.Thread | None = None
     _stopping: bool = False
-    _stderr_tail: collections.deque[str]
-    _stdout_tail: collections.deque[str]
-    _tail_lock: threading.Lock
-    _tail_size = 50
 
     @functools.cached_property
     def _mod_label(self) -> str:
@@ -162,10 +149,13 @@ class NativeModule(Module):
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
-        self._stderr_tail: collections.deque[str] = collections.deque(maxlen=self._tail_size)
-        self._stdout_tail: collections.deque[str] = collections.deque(maxlen=self._tail_size)
-        self._tail_lock = threading.Lock()
-        self._resolve_paths()
+
+        # Resolve relative cwd and executable against the subclass's source file.
+        if self.config.cwd is not None and not Path(self.config.cwd).is_absolute():
+            base_dir = Path(inspect.getfile(type(self))).resolve().parent
+            self.config.cwd = str(base_dir / self.config.cwd)
+        if not Path(self.config.executable).is_absolute() and self.config.cwd is not None:
+            self.config.executable = str(Path(self.config.cwd) / self.config.executable)
 
     @rpc
     def start(self) -> None:
@@ -189,11 +179,6 @@ class NativeModule(Module):
 
         env = {**os.environ, **self.config.extra_env}
         cwd = self.config.cwd or str(Path(self.config.executable).resolve().parent)
-
-        # Reset tail buffers for this run.
-        with self._tail_lock:
-            self._stderr_tail.clear()
-            self._stdout_tail.clear()
 
         logger.info(
             "Starting native process",
@@ -275,8 +260,8 @@ class NativeModule(Module):
             return
         pid = proc.pid
 
-        stdout_t = self._start_reader(proc.stdout, "info", self._stdout_tail)
-        stderr_t = self._start_reader(proc.stderr, "warning", self._stderr_tail)
+        stdout_t = self._start_reader(proc.stdout, "info")
+        stderr_t = self._start_reader(proc.stderr, "warning")
         rc = proc.wait()
         stdout_t.join(timeout=self.config.shutdown_timeout)
         stderr_t.join(timeout=self.config.shutdown_timeout)
@@ -290,58 +275,23 @@ class NativeModule(Module):
             )
             return
 
-        # Grab the tail for diagnostics.
-        with self._tail_lock:
-            stderr_snapshot = list(self._stderr_tail)
-            stdout_snapshot = list(self._stdout_tail)
-
         logger.error(
             "Native process died unexpectedly",
             module=self._mod_label,
             pid=pid,
             returncode=rc,
         )
-
-        # Log the last stderr/stdout lines so the cause is visible.
-        if stderr_snapshot:
-            logger.error(
-                f"Last {len(stderr_snapshot)} stderr lines from {self._mod_label}:",
-                module=self._mod_label,
-                pid=pid,
-            )
-            for line in stderr_snapshot:
-                logger.error(f"  stderr| {line}", module=self._mod_label)
-
-        if stdout_snapshot and not stderr_snapshot:
-            # Only dump stdout if stderr was empty (avoid double-noise).
-            logger.error(
-                f"Last {len(stdout_snapshot)} stdout lines from {self._mod_label}:",
-                module=self._mod_label,
-                pid=pid,
-            )
-            for line in stdout_snapshot:
-                logger.error(f"  stdout| {line}", module=self._mod_label)
-
-        if not stderr_snapshot and not stdout_snapshot:
-            logger.error(
-                "No output captured from native process — "
-                "binary may have crashed before producing any output",
-                module=self._mod_label,
-                pid=pid,
-            )
-
         self.stop()
 
     def _start_reader(
         self,
         stream: IO[bytes] | None,
         level: str,
-        tail_buf: collections.deque[str],
     ) -> threading.Thread:
         """Spawn a daemon thread that pipes a subprocess stream through the logger."""
         t = threading.Thread(
             target=self._read_log_stream,
-            args=(stream, level, tail_buf),
+            args=(stream, level),
             daemon=True,
             name=f"native-reader-{level}-{self._mod_label}",
         )
@@ -352,7 +302,6 @@ class NativeModule(Module):
         self,
         stream: IO[bytes] | None,
         level: str,
-        tail_buf: collections.deque[str],
     ) -> None:
         if stream is None:
             return
@@ -361,39 +310,8 @@ class NativeModule(Module):
             line = raw.decode("utf-8", errors="replace").rstrip()
             if not line:
                 continue
-
-            # Keep a rolling tail buffer for crash diagnostics.
-            with self._tail_lock:
-                tail_buf.append(line)
-
-            if self.config.log_format == LogFormat.JSON:
-                try:
-                    data = json.loads(line)
-                    event = data.pop("event", line)
-                    log_fn(event, module=self._mod_label, **data)
-                    continue
-                except (json.JSONDecodeError, TypeError):
-                    logger.warning(
-                        "malformed JSON from native module",
-                        module=self._mod_label,
-                        raw=line,
-                    )
             log_fn(line, module=self._mod_label, pid=self._process.pid if self._process else None)
         stream.close()
-
-    def _resolve_paths(self) -> None:
-        """Resolve relative ``cwd`` and ``executable`` against the subclass's source file."""
-        if self.config.cwd is not None and not Path(self.config.cwd).is_absolute():
-            source_file = inspect.getfile(type(self))
-            base_dir = Path(source_file).resolve().parent
-            self.config.cwd = str(base_dir / self.config.cwd)
-        if not Path(self.config.executable).is_absolute() and self.config.cwd is not None:
-            self.config.executable = str(Path(self.config.cwd) / self.config.executable)
-
-    def _build_cache_name(self) -> str:
-        """Return a stable, unique cache name for this module's build state."""
-        source_file = Path(inspect.getfile(type(self))).resolve()
-        return f"native_{type(self).__name__}_{source_file}"
 
     def _maybe_build(self) -> None:
         """Run ``build_command`` if the executable does not exist or sources changed."""
@@ -402,10 +320,12 @@ class NativeModule(Module):
         # Check if rebuild needed due to source changes. We call did_change
         # even when the exe is missing so the cache gets seeded on the first
         # build — no separate seed step needed afterwards.
+        source_file = Path(inspect.getfile(type(self))).resolve()
+        cache_name = f"native_{type(self).__name__}_{source_file}"
         needs_rebuild = self.config.should_rebuild or (
             self.config.rebuild_on_change
             and did_change(
-                self._build_cache_name(),
+                cache_name,
                 self.config.rebuild_on_change,
                 cwd=self.config.cwd,
                 extra_hash=self.config.build_command,
@@ -524,7 +444,6 @@ def _clear_nix_executable(exe: Path, cwd: Path | None) -> None:
 
 
 __all__ = [
-    "LogFormat",
     "NativeModule",
     "NativeModuleConfig",
 ]
