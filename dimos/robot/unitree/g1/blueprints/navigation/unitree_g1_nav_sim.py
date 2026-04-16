@@ -67,15 +67,17 @@ def _rerun_blueprint() -> Any:
     )
 
 
+vehicle_height = 1.24
 unitree_g1_nav_sim = (
     autoconnect(
         UnityBridgeModule.blueprint(
             unity_binary="",
             unity_scene="home_building_1",
-            vehicle_height=1.24,
+            vehicle_height=vehicle_height,
         ),
         smart_nav(
             use_simple_planner=True,
+            vehicle_height=vehicle_height,
             terrain_analysis={
                 "obstacle_height_threshold": 0.1,
                 "ground_height_threshold": 0.05,

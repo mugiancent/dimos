@@ -23,6 +23,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from dimos_lcm.std_msgs import Bool  # type: ignore[import-untyped]
+
 from dimos.core.native_module import NativeModule, NativeModuleConfig
 from dimos.core.stream import In, Out
 from dimos.msgs.geometry_msgs.PointStamped import PointStamped
@@ -40,7 +42,7 @@ class FarPlannerConfig(NativeModuleConfig):
     cwd: str | None = str(Path(__file__).resolve().parent)
     executable: str = "result/bin/far_planner_native"
     build_command: str | None = (
-        "nix build github:dimensionalOS/dimos-module-far-planner/v0.3.0 --no-write-lock-file"
+        "nix build github:dimensionalOS/dimos-module-far-planner/v0.4.0 --no-write-lock-file"
     )
 
     # C++ binary uses snake_case CLI args.
@@ -52,11 +54,11 @@ class FarPlannerConfig(NativeModuleConfig):
     update_rate: float = 5.0
     robot_dimension: float = 0.5
     voxel_dim: float = 0.1
-    sensor_range: float = 15.0
+    sensor_range: float = 30.0
     terrain_range: float = 7.5
     local_planner_range: float = 2.5
     vehicle_height: float = 0.75
-    is_static_env: bool = False
+    is_static_env: bool = True
     is_viewpoint_extend: bool = True
     is_multi_layer: bool = False
     is_debug_output: bool = False
@@ -64,7 +66,7 @@ class FarPlannerConfig(NativeModuleConfig):
     world_frame: str = "map"
 
     # --- Graph planner params ---
-    converge_dist: float = 2.5
+    converge_dist: float = 1.5
     goal_adjust_radius: float = 10.0
     free_counter_thred: int = 5
     reach_goal_vote_size: int = 5
@@ -111,6 +113,7 @@ class FarPlanner(NativeModule):
         registered_scan (In[PointCloud2]): Raw lidar scan (for dynamic obs detection).
         odometry (In[Odometry]): Vehicle state (corrected by PGO).
         goal (In[PointStamped]): User-specified navigation goal.
+        stop_movement (In[Bool]): Cancel active goal and go idle.
         way_point (Out[PointStamped]): Intermediate waypoint for local planner.
         goal_path (Out[NavPath]): Full planned path to goal.
     """
@@ -122,6 +125,7 @@ class FarPlanner(NativeModule):
     registered_scan: In[PointCloud2]
     odometry: In[Odometry]
     goal: In[PointStamped]
+    stop_movement: In[Bool]
     way_point: Out[PointStamped]
     goal_path: Out[NavPath]
     graph_nodes: Out[GraphNodes3D]

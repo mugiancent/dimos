@@ -185,13 +185,20 @@ def smart_nav(
             }
         ),
         *(
-            [SimplePlanner.blueprint(**(simple_planner or {}))]
-            if use_simple_planner
-            else [
-                FarPlanner.blueprint(
-                    **{"is_static_env": False, "sensor_range": 30.0, **(far_planner or {})}
+            [
+                SimplePlanner.blueprint(
+                    **{
+                        **(
+                            {"ground_offset_below_robot": vehicle_height}
+                            if vehicle_height is not None
+                            else {}
+                        ),
+                        **(simple_planner or {}),
+                    }
                 )
             ]
+            if use_simple_planner
+            else [FarPlanner.blueprint(**(far_planner or {}))]
         ),
         PGO.blueprint(**(pgo or {})),
         ClickToGoal.blueprint(**(click_to_goal or {})),

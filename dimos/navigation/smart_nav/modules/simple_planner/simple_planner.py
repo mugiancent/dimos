@@ -37,15 +37,15 @@ import numpy as np
 
 from dimos.core.core import rpc
 from dimos.core.module import Module, ModuleConfig
-from dimos.utils.logging_config import setup_logger
-
-logger = setup_logger()
 from dimos.core.stream import In, Out
 from dimos.msgs.geometry_msgs.PointStamped import PointStamped
 from dimos.msgs.geometry_msgs.PoseStamped import PoseStamped
 from dimos.msgs.nav_msgs.Odometry import Odometry
 from dimos.msgs.nav_msgs.Path import Path
 from dimos.msgs.sensor_msgs.PointCloud2 import PointCloud2
+from dimos.utils.logging_config import setup_logger
+
+logger = setup_logger()
 
 # ──────────────────────────────────────────────────────────────────────────
 # Pure-Python costmap + A* (no dependencies beyond numpy/stdlib)
@@ -384,7 +384,7 @@ class SimplePlanner(Module):
                 self._goal_x = None
                 self._goal_y = None
                 self._cached_path = None
-            print("[simple_planner] Goal cleared — idle until new goal.")
+            logger.info("Goal cleared — idle until new goal")
             return
         with self._lock:
             self._goal_x = float(msg.x)
