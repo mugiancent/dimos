@@ -38,10 +38,8 @@ from __future__ import annotations
 
 from dimos.core.coordination.blueprints import autoconnect
 from dimos.core.global_config import global_config
+from dimos.navigation.smart_nav.arise_sim_adapter import AriseSimAdapter
 from dimos.navigation.smart_nav.main import smart_nav, smart_nav_rerun_config
-from dimos.navigation.smart_nav.modules.arise_sim_adapter import (
-    AriseSimAdapter,  # type: ignore[import-untyped]
-)
 from dimos.navigation.smart_nav.modules.arise_slam.arise_slam import AriseSLAM
 from dimos.robot.unitree.g1.blueprints.navigation.g1_rerun import g1_static_robot
 from dimos.simulation.unity.module import UnityBridgeModule
