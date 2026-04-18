@@ -26,12 +26,6 @@ for i in range(14):
 color_check.to_svg("assets/plot_colors.svg")
 ```
 
-
-
-
-
-
-
 ![output](assets/plot_colors.svg)
 
 named colors can also be used explicitly. when you pin a series to one of
@@ -53,11 +47,6 @@ p.add(Series(ts=xs, values=[math.sin(2 * x) for x in xs]))
 p.add(HLine(y=0, style=Style.dashed, opacity=0.5, color="#ff0000"))
 p.to_svg("assets/plot_named.svg")
 ```
-
-
-
-
-
 
 ![output](assets/plot_named.svg)
 
@@ -96,14 +85,8 @@ plot.add(
     opacity=0.5
 )
 
-
 plot.to_svg("assets/plot_robot_data.svg")
 ```
-
-
-
-
-
 
 ![output](assets/plot_robot_data.svg)
 
@@ -159,7 +142,6 @@ Stream("cache")
 Stream("cache"): 267 items, 2025-12-26 11:09:11 — 2025-12-26 11:13:59 (288.4s)
 ```
 
-
 ![output](assets/plot_plantness.svg)
 
 We can be pretty sure the robot saw some plants by peaks at beginning and end of data, but this looks trash, why?
@@ -188,12 +170,6 @@ plot.add(HLine(y=0.15, style=Style.dashed, color=color.red))
 plot.to_svg("assets/plot_plantness_brightness.svg")
 ```
 
-
-
-
-
-
-
 ![output](assets/plot_plantness_brightness.svg)
 We see that stuff isn't embedded below some minimum brightness.
 
@@ -214,11 +190,6 @@ plot.add(
 plot.to_svg("assets/plot_plantness_gap_fill.svg")
 
 ```
-
-
-
-
-
 
 ![output](assets/plot_plantness_gap_fill.svg)
 
