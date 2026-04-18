@@ -1,0 +1,16 @@
+[workspace]
+
+[package]
+name = "voxelmapper"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "voxelmapper"
+path = "src/main.rs"
+
+[dependencies]
+dimos-native-module = { path = "../../../native/rust" }
+lcm-msgs = { git = "https://github.com/dimensionalOS/dimos-lcm.git", branch = "rust-codegen" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+serde = { version = "1", features = ["derive"] }
