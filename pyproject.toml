@@ -80,4 +80,5 @@ asyncio_mode = "auto"
 # Removed --cov flags so a plain `pytest` run doesn't require pytest-cov installed
 # -p no:warnings keeps output tidy during local experimentation
 # Added -x so the test run stops on the first failure (faster feedback locally)
-addopts = "-v -p no:warnings -x"
+# Removed -x for my fork: I prefer seeing all failures at once rather than stopping early
+addopts = "-v -p no:warnings"
