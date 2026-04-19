@@ -83,4 +83,5 @@ asyncio_mode = "auto"
 # -p no:warnings keeps output tidy during local experimentation
 # Added -x so the test run stops on the first failure (faster feedback locally)
 # Removed -x for my fork: I prefer seeing all failures at once rather than stopping early
-addopts = "-v -p no:warnings"
+# Added --tb=short for more concise tracebacks when multiple tests fail
+addopts = "-v -p no:warnings --tb=short"
