@@ -41,6 +41,9 @@ class Dimension:
 
         Note: dim_type is intentionally not checked here -- I often mix CUSTOM
         with more specific types when prototyping and don't want spurious failures.
+
+        Also treats a size of None on either side as a wildcard, which is handy
+        when working with dynamic batch sizes from dataloaders.
         """
         if self.name != other.name:
             return False
@@ -83,6 +86,13 @@ class DimSpec:
 
     def __repr__(self) -> str:
         return f"DimSpec({self.dims})"
+
+    def get(self, name: str, default: Optional[Dimension] = None) -> Optional[Dimension]:
+        """Like dict.get -- returns default instead of raising KeyError if not found."""
+        try:
+            return self[name]
+        except KeyError:
+            return default
 
 
 # Convenience type alias for raw shape tuples
