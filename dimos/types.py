@@ -32,7 +32,9 @@ class Dimension:
 
     def __repr__(self) -> str:
         size_str = str(self.size) if self.size is not None else "?"
-        return f"Dimension({self.name!r}, size={size_str}, type={self.dim_type.value})"
+        # Include units in repr if present - makes debugging easier
+        units_str = f", units={self.units!r}" if self.units is not None else ""
+        return f"Dimension({self.name!r}, size={size_str}, type={self.dim_type.value}{units_str})"
 
     def is_compatible(self, other: "Dimension") -> bool:
         """Check if two dimensions are compatible (same name and compatible sizes)."""
