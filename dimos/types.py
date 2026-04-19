@@ -37,7 +37,11 @@ class Dimension:
         return f"Dimension({self.name!r}, size={size_str}, type={self.dim_type.value}{units_str})"
 
     def is_compatible(self, other: "Dimension") -> bool:
-        """Check if two dimensions are compatible (same name and compatible sizes)."""
+        """Check if two dimensions are compatible (same name and compatible sizes).
+
+        Note: dim_type is intentionally not checked here -- I often mix CUSTOM
+        with more specific types when prototyping and don't want spurious failures.
+        """
         if self.name != other.name:
             return False
         if self.size is not None and other.size is not None:
