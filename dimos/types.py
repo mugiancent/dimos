@@ -93,10 +93,3 @@ class DimSpec:
             return self[name]
         except KeyError:
             return default
-
-
-# Convenience type alias for raw shape tuples
-ShapeLike = Union[Tuple[int, ...], List[int]]
-
-# Type for dimension name or index references
-DimRef = Union[str, int]
