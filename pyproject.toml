@@ -75,6 +75,8 @@ warn_unused_configs = true
 ignore_missing_imports = true
 # Also ignore errors in generated/third-party stubs I don't control
 follow_imports = "silent"
+# Personal preference: flag unused ignores so I can keep the config tidy
+warn_unused_ignores = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
