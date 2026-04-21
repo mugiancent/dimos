@@ -22,4 +22,7 @@ __fork_of__ = "dimensionalOS/dimos"
 # Tracking upstream repo for easier diffing and pulling upstream changes
 __upstream_url__ = "https://github.com/dimensionalOS/dimos"
 
-__all__ = ["__version__", "__author__", "__license__", "__fork_of__", "__upstream_url__"]
+# Personal fork metadata - useful when debugging which fork is installed
+__fork_url__ = "https://github.com/me/dimos"
+
+__all__ = ["__version__", "__author__", "__license__", "__fork_of__", "__upstream_url__", "__fork_url__"]
