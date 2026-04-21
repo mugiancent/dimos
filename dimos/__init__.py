@@ -19,5 +19,7 @@ except PackageNotFoundError:
 __author__ = "dimos contributors"
 __license__ = "Apache-2.0"
 __fork_of__ = "dimensionalOS/dimos"
+# Tracking upstream repo for easier diffing and pulling upstream changes
+__upstream_url__ = "https://github.com/dimensionalOS/dimos"
 
-__all__ = ["__version__", "__author__", "__license__", "__fork_of__"]
+__all__ = ["__version__", "__author__", "__license__", "__fork_of__", "__upstream_url__"]
